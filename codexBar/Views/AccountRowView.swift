@@ -24,7 +24,7 @@ struct AccountRowView: View {
                     .foregroundColor(isActive ? .accentColor : .primary)
                     .lineLimit(1)
 
-                Text(account.planType.uppercased())
+                Text(planBadgeText)
                     .font(.system(size: 9, weight: .medium))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
@@ -206,11 +206,28 @@ struct AccountRowView: View {
     }
 
     private var planBadgeColor: Color {
-        switch account.planType.lowercased() {
+        switch normalizedPlanType {
+        case "free": return .green
+        case "prolite", "pro5x", "codexpro5x": return Color(red: 0.95, green: 0.50, blue: 0.16)
+        case "pro", "promax", "pro20x", "codexpro20x": return Color(red: 0.80, green: 0.28, blue: 0.06)
         case "team": return .blue
         case "plus": return .purple
         default: return .gray
         }
+    }
+
+    private var planBadgeText: String {
+        switch normalizedPlanType {
+        case "prolite", "pro5x", "codexpro5x": return "PRO 5X"
+        case "pro", "promax", "pro20x", "codexpro20x": return "PRO 20X"
+        default: return account.planType.uppercased()
+        }
+    }
+
+    private var normalizedPlanType: String {
+        account.planType
+            .lowercased()
+            .replacingOccurrences(of: "[_\\-\\s]", with: "", options: .regularExpression)
     }
 
     private func usageColor(_ percent: Double) -> Color {
