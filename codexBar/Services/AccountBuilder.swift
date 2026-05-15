@@ -6,7 +6,9 @@ struct AccountBuilder {
         let claims = decodeJWT(tokens.accessToken)
         let authClaims = claims["https://api.openai.com/auth"] as? [String: Any] ?? [:]
 
-        let accountId = authClaims["chatgpt_account_id"] as? String ?? ""
+        let chatgptAccountId = authClaims["chatgpt_account_id"] as? String ?? ""
+        let userId = authClaims["user_id"] as? String ?? ""
+        let accountId = !chatgptAccountId.isEmpty ? chatgptAccountId : userId
         let planType = authClaims["chatgpt_plan_type"] as? String ?? "free"
 
         // 从 id_token 取 email

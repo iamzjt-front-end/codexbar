@@ -62,7 +62,15 @@ class TokenStore: ObservableObject {
     }
 
     func addOrUpdate(_ account: TokenAccount) {
-        if let idx = accounts.firstIndex(where: { $0.accountId == account.accountId }) {
+        let matchIdx: Int?
+        if !account.accountId.isEmpty {
+            matchIdx = accounts.firstIndex { $0.accountId == account.accountId }
+        } else if !account.email.isEmpty {
+            matchIdx = accounts.firstIndex { $0.email == account.email }
+        } else {
+            matchIdx = nil
+        }
+        if let idx = matchIdx {
             var merged = account
             // 保留 store 里的 isActive，防止异步刷新快照覆盖 activate() 的结果
             merged.isActive = accounts[idx].isActive
