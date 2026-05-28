@@ -43,3 +43,5 @@ fastlane/test_output
 *.p12
 *.mobileprovision
 *.provisionprofile
+dist/
+codexBar/Assets.xcassets/AppIcon.appiconset.bak*/

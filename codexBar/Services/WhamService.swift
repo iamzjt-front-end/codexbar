@@ -68,6 +68,8 @@ class WhamService {
             let (result, name) = try await (usageResult, orgName)
             await MainActor.run {
                 var updated = account
+                updated.tokenExpired = false
+                updated.isSuspended = false
                 updated.planType = result.planType
                 updated.primaryUsedPercent = result.primaryUsedPercent
                 updated.secondaryUsedPercent = result.secondaryUsedPercent
@@ -105,6 +107,8 @@ class WhamService {
                         let (result, name) = try await (usageResult, orgName)
                         await MainActor.run {
                             var updated = account
+                            updated.tokenExpired = false
+                            updated.isSuspended = false
                             updated.planType = result.planType
                             updated.primaryUsedPercent = result.primaryUsedPercent
                             updated.secondaryUsedPercent = result.secondaryUsedPercent
