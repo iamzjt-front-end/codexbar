@@ -71,7 +71,7 @@ class OAuthManager: NSObject, ObservableObject {
 
     // MARK: - Private
 
-    private func exchangeCode(_ code: String) {
+    private func exchangeCode(_ code: String, attempt: Int = 0) {
         guard let url = URL(string: tokenURL) else {
             fail(OAuthError.invalidURL)
             return
@@ -96,6 +96,15 @@ class OAuthManager: NSObject, ObservableObject {
         URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
             guard let self else { return }
             if let error {
+                // -1005 connection lost / -1001 timeout / -1004 cannot connect: 重试一次
+                let nsErr = error as NSError
+                let transient = [NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut, NSURLErrorCannotConnectToHost]
+                if attempt < 1, nsErr.domain == NSURLErrorDomain, transient.contains(nsErr.code) {
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.6) {
+                        self.exchangeCode(code, attempt: attempt + 1)
+                    }
+                    return
+                }
                 self.fail(error)
                 return
             }
