@@ -121,4 +121,15 @@ enum L {
     static func resetInDay(_ d: Int, _ h: Int) -> String {
         zh ? "\(d) 天 \(h) 小时后重置" : "Resets in \(d)d \(h)h"
     }
+
+    // MARK: - Token stats
+    static var tokenRangeToday: String { zh ? "今日" : "Today" }
+    static var tokenRangeWeek: String  { zh ? "本周" : "This Week" }
+    static var tokenRangeMonth: String { zh ? "本月" : "This Month" }
+    static var tokenTotal: String      { zh ? "Token 用量" : "Tokens Used" }
+    static func tokenThreadCount(_ n: Int) -> String {
+        zh ? "\(n) 个会话" : "\(n) threads"
+    }
+    static var heatmapLess: String { zh ? "少" : "Less" }
+    static var heatmapMore: String { zh ? "多" : "More" }
 }

@@ -182,6 +182,11 @@ struct MenuBarView: View {
                 .padding(.vertical, 6)
             }
 
+            if !store.accounts.isEmpty {
+                Divider()
+                TokenStatsView()
+            }
+
             Divider()
 
             // 底部操作栏
