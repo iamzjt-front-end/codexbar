@@ -93,14 +93,27 @@ class OAuthManager: NSObject, ObservableObject {
             .joined(separator: "&")
             .data(using: .utf8)
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+        // 第一次用 URLSession.shared；重试时用 ephemeral 强制建新连接，
+        // 绕开连接池里可能复用的死 QUIC/HTTP3 连接（这是 -1005 的常见根因）。
+        let session: URLSession
+        if attempt == 0 {
+            session = URLSession.shared
+        } else {
+            let config = URLSessionConfiguration.ephemeral
+            config.timeoutIntervalForRequest = 30
+            config.waitsForConnectivity = false
+            session = URLSession(configuration: config)
+        }
+
+        session.dataTask(with: request) { [weak self] data, _, error in
             guard let self else { return }
             if let error {
-                // -1005 connection lost / -1001 timeout / -1004 cannot connect: 重试一次
+                // -1005 connection lost / -1001 timeout / -1004 cannot connect: 重试最多 2 次
                 let nsErr = error as NSError
                 let transient = [NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut, NSURLErrorCannotConnectToHost]
-                if attempt < 1, nsErr.domain == NSURLErrorDomain, transient.contains(nsErr.code) {
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.6) {
+                if attempt < 2, nsErr.domain == NSURLErrorDomain, transient.contains(nsErr.code) {
+                    let backoff: TimeInterval = attempt == 0 ? 0.6 : 1.5
+                    DispatchQueue.global().asyncAfter(deadline: .now() + backoff) {
                         self.exchangeCode(code, attempt: attempt + 1)
                     }
                     return

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import Combine
 import UserNotifications
 
@@ -248,14 +249,12 @@ struct MenuBarView: View {
             Task {
                 await refreshAccount(active)
                 store.markActiveAccount()
-                autoSwitchIfNeeded()
             }
         }
         .onReceive(slowTimer) { _ in
             Task {
                 if !menuVisible { await refresh() }
                 store.markActiveAccount()
-                autoSwitchIfNeeded()
             }
         }
         .onAppear {
@@ -273,52 +272,32 @@ struct MenuBarView: View {
     }
 
     private func activateAccount(_ account: TokenAccount) {
+        let running = NSWorkspace.shared.runningApplications.filter {
+            $0.bundleIdentifier == "com.openai.codex"
+        }
+
+        // Codex 没跑：直接切，不打扰
+        guard !running.isEmpty else {
+            do { try store.activate(account) }
+            catch { showError = error.localizedDescription }
+            return
+        }
+
+        // Codex 在跑：问一下用户是否要切换（切换必须重启 Codex 才生效）
+        let alert = NSAlert()
+        alert.messageText = L.restartCodexTitle
+        alert.informativeText = L.restartCodexInfo
+        alert.addButton(withTitle: L.continueRestart)
+        alert.addButton(withTitle: L.cancel)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
         do {
             try store.activate(account)
         } catch {
             showError = error.localizedDescription
-        }
-    }
-
-    /// 检查当前账号额度，必要时自动切换到最优账号
-    private func autoSwitchIfNeeded() {
-        guard let active = store.accounts.first(where: { $0.isActive }) else { return }
-
-        let primary5hRemaining  = 100.0 - active.primaryUsedPercent
-        let secondary7dRemaining = 100.0 - active.secondaryUsedPercent
-
-        let shouldSwitch = primary5hRemaining <= 10.0 || secondary7dRemaining <= 3.0
-        guard shouldSwitch else { return }
-
-        // 找最优账号：未被封禁、token 未过期、非当前账号、usageStatus 最优
-        let candidates = store.accounts.filter {
-            !$0.isSuspended && !$0.tokenExpired && $0.accountId != active.accountId
-        }.sorted {
-            if statusRank($0) != statusRank($1) { return statusRank($0) < statusRank($1) }
-            let rem0 = min(100 - $0.primaryUsedPercent, 100 - $0.secondaryUsedPercent)
-            let rem1 = min(100 - $1.primaryUsedPercent, 100 - $1.secondaryUsedPercent)
-            return rem0 > rem1
-        }
-
-        guard let best = candidates.first else {
-            // 无可用账号，发通知提醒用户
-            sendNotification(title: L.autoSwitchTitle, body: L.autoSwitchNoCandidates)
             return
         }
-
-        do {
-            try store.activate(best)
-            sendAutoSwitchNotification(from: active, to: best)
-        } catch {
-            // 静默失败，等下次扫描再试
-        }
-    }
-
-    private func sendAutoSwitchNotification(from old: TokenAccount, to new: TokenAccount) {
-        sendNotification(
-            title: L.autoSwitchTitle,
-            body: L.autoSwitchBody(old.organizationName ?? old.email, new.organizationName ?? new.email)
-        )
+        forceQuitCodex(running, reopen: true)
     }
 
     private func sendNotification(title: String, body: String) {
@@ -364,6 +343,7 @@ struct MenuBarView: View {
 
     private func refresh() async {
         isRefreshing = true
+        await RefreshService.shared.refreshExpiring(store: store)
         await WhamService.shared.refreshAll(store: store)
         isRefreshing = false
     }
@@ -375,6 +355,25 @@ struct MenuBarView: View {
     }
 
     private func reauthAccount(_ account: TokenAccount) {
+        // 先尝试用 refresh_token 静默续期，成功就免去浏览器重新授权
+        if !account.refreshToken.isEmpty {
+            Task {
+                let ok = await RefreshService.shared.refreshAndPersist(account, store: store)
+                if ok {
+                    if let updated = store.accounts.first(where: { $0.accountId == account.accountId }) {
+                        await WhamService.shared.refreshOne(account: updated, store: store)
+                    }
+                } else {
+                    // 续期失败（refresh_token 失效）→ 回退到完整 OAuth 重新授权
+                    startReauthOAuth(account)
+                }
+            }
+            return
+        }
+        startReauthOAuth(account)
+    }
+
+    private func startReauthOAuth(_ account: TokenAccount) {
         oauth.startOAuth { result in
             switch result {
             case .success(let tokens):

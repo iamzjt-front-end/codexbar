@@ -5,6 +5,11 @@ struct codexBarApp: App {
     @StateObject private var store = TokenStore.shared
     @StateObject private var oauth = OAuthManager.shared
 
+    init() {
+        // App 级后台续期，脱离菜单 View 生命周期（菜单关闭时 View 不存在，其内 Timer 不跑）
+        BackgroundRefresher.shared.start(interval: 300)
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarView()
