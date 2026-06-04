@@ -63,6 +63,12 @@ struct MenuBarView: View {
         store.accounts.filter { $0.usageStatus == .ok }.count
     }
 
+    private var accountListHeight: CGFloat {
+        let headerHeight = CGFloat(groupedAccounts.count) * 18
+        let rowHeight = CGFloat(store.accounts.count) * 72
+        return min(380, max(110, headerHeight + rowHeight + 16))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 标题栏
@@ -146,7 +152,7 @@ struct MenuBarView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                 }
-                .frame(maxHeight: 380)
+                .frame(height: accountListHeight)
             }
 
             if let success = showSuccess {
