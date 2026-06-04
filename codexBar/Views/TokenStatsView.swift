@@ -49,20 +49,46 @@ struct TokenStatsView: View {
 }
 
 enum TokenFormat {
-    /// 1234 → "1.2K"；1_234_567 → "1.2M"；1_234_000_000 → "1.2B"
+    /// zh: 12345 -> "1.2万", 2160000000 -> "21.6亿"
+    /// en: 1234 -> "1.23K", 1234567 -> "1.23M", 1234000000 -> "1.23B"
     static func compact(_ n: Int) -> String {
+        if L.zh { return compactChinese(n) }
+
         let v = Double(n)
         switch n {
         case 1_000_000_000...:
-            return String(format: "%.2fB", v / 1_000_000_000)
+            return format(v / 1_000_000_000, suffix: "B", decimals: 2)
         case 1_000_000...:
-            return String(format: "%.2fM", v / 1_000_000)
+            return format(v / 1_000_000, suffix: "M", decimals: 2)
         case 10_000...:
-            return String(format: "%.1fK", v / 1_000)
+            return format(v / 1_000, suffix: "K", decimals: 1)
         case 1_000...:
-            return String(format: "%.2fK", v / 1_000)
+            return format(v / 1_000, suffix: "K", decimals: 2)
         default:
             return "\(n)"
         }
+    }
+
+    private static func compactChinese(_ n: Int) -> String {
+        let v = Double(n)
+        switch n {
+        case 100_000_000...:
+            return format(v / 100_000_000, suffix: "亿", decimals: 1)
+        case 10_000...:
+            return format(v / 10_000, suffix: "万", decimals: 1)
+        default:
+            return "\(n)"
+        }
+    }
+
+    private static func format(_ value: Double, suffix: String, decimals: Int) -> String {
+        var text = String(format: "%.\(decimals)f", value)
+        while text.contains("."), text.last == "0" {
+            text.removeLast()
+        }
+        if text.last == "." {
+            text.removeLast()
+        }
+        return text + suffix
     }
 }
