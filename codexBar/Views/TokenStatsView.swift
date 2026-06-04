@@ -18,6 +18,7 @@ struct TokenStatsView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .id(language.identity)
 
             HStack(spacing: 5) {
                 Text(TokenFormat.compact(service.stat.totalTokens))
