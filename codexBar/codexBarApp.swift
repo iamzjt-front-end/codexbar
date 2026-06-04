@@ -33,6 +33,8 @@ struct MenuBarIconView: View {
     @EnvironmentObject var language: LanguageSettings
 
     var body: some View {
+        let _ = language.identity
+
         HStack(spacing: 3) {
             Image(systemName: iconName)
                 .symbolRenderingMode(.hierarchical)
@@ -53,7 +55,6 @@ struct MenuBarIconView: View {
                 }
             }
         }
-        .id(language.identity)
     }
 
     private var iconName: String {

@@ -5,6 +5,8 @@ struct TokenStatsView: View {
     @ObservedObject var service: TokenStatsService = .shared
 
     var body: some View {
+        let _ = language.identity
+
         VStack(spacing: 8) {
             Picker("", selection: Binding(
                 get: { service.range },
@@ -41,7 +43,6 @@ struct TokenStatsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .id(language.identity)
         .onAppear { service.refresh() }
     }
 }

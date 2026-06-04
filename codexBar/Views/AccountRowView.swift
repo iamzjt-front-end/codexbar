@@ -14,6 +14,8 @@ struct AccountRowView: View {
     let onDelete: () -> Void
 
     var body: some View {
+        let _ = language.identity
+
         VStack(alignment: .leading, spacing: 4) {
             // Line 1: org name + plan badge + active mark + switch button
             HStack(spacing: 4) {
@@ -193,7 +195,6 @@ struct AccountRowView: View {
                     .padding(.vertical, 4)
             }
         }
-        .id(language.identity)
     }
 
     private var displayName: String {

@@ -58,16 +58,16 @@ final class TokenStatsService: ObservableObject {
         // 热力图固定窗口：近 ~17 周
         let heatSince = Calendar(identifier: .gregorian).date(byAdding: .day, value: -119, to: Date()) ?? since
         loading = true
-        currentTask = Task.detached(priority: .userInitiated) { [weak self] in
-            let s = CodexStatsDB.stat(since: since)
-            let d = CodexStatsDB.dailyTokens(since: heatSince)
-            await MainActor.run {
-                guard let self else { return }
-                if self.range == r {
-                    self.stat = s
-                    self.daily = d
-                    self.loading = false
-                }
+        currentTask = Task(priority: .userInitiated) { [weak self] in
+            let (s, d) = await Task.detached(priority: .userInitiated) {
+                (CodexStatsDB.stat(since: since), CodexStatsDB.dailyTokens(since: heatSince))
+            }.value
+
+            guard !Task.isCancelled, let self else { return }
+            if self.range == r {
+                self.stat = s
+                self.daily = d
+                self.loading = false
             }
         }
     }

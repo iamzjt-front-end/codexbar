@@ -257,7 +257,6 @@ struct MenuBarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .id(language.identity)
         .frame(width: 300)
         .onReceive(tickTimer) { tickDate in
             now = tickDate
@@ -275,6 +274,7 @@ struct MenuBarView: View {
             menuVisible = true
             lastVisibleRefresh = Date()
             store.markActiveAccount()
+            TokenStatsService.shared.refresh()
         }
         .onDisappear { menuVisible = false }
     }
@@ -361,6 +361,7 @@ struct MenuBarView: View {
         await RefreshService.shared.refreshExpiring(store: store)
         await WhamService.shared.refreshAll(store: store)
         lastVisibleRefresh = Date()
+        TokenStatsService.shared.refresh()
         isRefreshing = false
     }
 

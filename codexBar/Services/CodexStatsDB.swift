@@ -5,12 +5,17 @@ import SQLite3
 /// codex 自维护每个 thread 的 tokens_used（累计）+ updated_at，单条带索引 SQL 毫秒级。
 /// 只读打开，不锁库，不影响正在运行的 Codex（WAL 允许并发读）。
 struct CodexStatsDB {
-    struct WindowStat {
-        var threadCount: Int = 0
-        var totalTokens: Int = 0
+    struct WindowStat: Sendable {
+        var threadCount: Int
+        var totalTokens: Int
+
+        nonisolated init(threadCount: Int = 0, totalTokens: Int = 0) {
+            self.threadCount = threadCount
+            self.totalTokens = totalTokens
+        }
     }
 
-    private static var dbPath: String {
+    nonisolated private static var dbPath: String {
         let home: URL
         if let pw = getpwuid(getuid()), let pwDir = pw.pointee.pw_dir {
             home = URL(fileURLWithPath: String(cString: pwDir))
@@ -21,7 +26,7 @@ struct CodexStatsDB {
     }
 
     /// 查询 updated_at ≥ since 的 thread 数与累计 token 之和。
-    static func stat(since: Date) -> WindowStat {
+    nonisolated static func stat(since: Date) -> WindowStat {
         var result = WindowStat()
         guard FileManager.default.fileExists(atPath: dbPath) else { return result }
 
@@ -52,7 +57,7 @@ struct CodexStatsDB {
 
     /// 每日 token 用量（updated_at ≥ since），key = 当地时区的 "yyyy-MM-dd"。
     /// 用于 GitHub 风格贡献热力图。
-    static func dailyTokens(since: Date) -> [String: Int] {
+    nonisolated static func dailyTokens(since: Date) -> [String: Int] {
         var out: [String: Int] = [:]
         guard FileManager.default.fileExists(atPath: dbPath) else { return out }
 
@@ -83,7 +88,7 @@ struct CodexStatsDB {
     }
 
     /// 按 model 分组的 token 用量（updated_at ≥ since），降序，最多 limit 条。
-    static func byModel(since: Date, limit: Int = 5) -> [(model: String, tokens: Int)] {
+    nonisolated static func byModel(since: Date, limit: Int = 5) -> [(model: String, tokens: Int)] {
         var rows: [(String, Int)] = []
         guard FileManager.default.fileExists(atPath: dbPath) else { return rows }
 
