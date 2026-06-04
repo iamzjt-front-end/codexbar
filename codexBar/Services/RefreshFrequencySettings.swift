@@ -2,7 +2,6 @@ import Combine
 import Foundation
 
 enum RefreshFrequencyOption: String, CaseIterable, Identifiable {
-    case auto
     case tenSeconds
     case thirtySeconds
     case oneMinute
@@ -12,7 +11,6 @@ enum RefreshFrequencyOption: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .auto: return "AUTO"
         case .tenSeconds: return "10s"
         case .thirtySeconds: return "30s"
         case .oneMinute: return "1m"
@@ -22,7 +20,7 @@ enum RefreshFrequencyOption: String, CaseIterable, Identifiable {
 
     var visibleInterval: TimeInterval {
         switch self {
-        case .auto, .tenSeconds: return 10
+        case .tenSeconds: return 10
         case .thirtySeconds: return 30
         case .oneMinute: return 60
         case .twoMinutes: return 120
@@ -31,7 +29,6 @@ enum RefreshFrequencyOption: String, CaseIterable, Identifiable {
 
     var backgroundInterval: TimeInterval {
         switch self {
-        case .auto: return 60
         case .tenSeconds: return 10
         case .thirtySeconds: return 30
         case .oneMinute: return 60
@@ -40,12 +37,7 @@ enum RefreshFrequencyOption: String, CaseIterable, Identifiable {
     }
 
     var helpDetail: String {
-        switch self {
-        case .auto:
-            return L.zh ? "菜单打开 10s，后台 1m" : "10s while open, 1m in background"
-        default:
-            return label
-        }
+        label
     }
 }
 
@@ -62,7 +54,8 @@ final class RefreshFrequencySettings: ObservableObject {
            let option = RefreshFrequencyOption(rawValue: saved) {
             selection = option
         } else {
-            selection = .auto
+            selection = .thirtySeconds
+            UserDefaults.standard.set(selection.rawValue, forKey: defaultsKey)
         }
     }
 

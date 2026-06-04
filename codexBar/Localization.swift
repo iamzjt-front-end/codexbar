@@ -5,26 +5,19 @@ import Foundation
 final class LanguageSettings: ObservableObject {
     static let shared = LanguageSettings()
 
-    @Published private(set) var override: Bool?
+    @Published private(set) var override: Bool
 
     private init() {
-        override = L.languageOverride
+        override = L.languageOverride ?? L.systemIsChinese
+        L.languageOverride = override
     }
 
     var identity: String {
-        switch override {
-        case nil: return "auto"
-        case true: return "zh"
-        case false: return "en"
-        }
+        override ? "zh" : "en"
     }
 
     var buttonLabel: String {
-        switch override {
-        case nil: return "AUTO"
-        case true: return "中"
-        case false: return "EN"
-        }
+        override ? "中" : "EN"
     }
 
     var switchLanguageHelp: String {
@@ -32,20 +25,14 @@ final class LanguageSettings: ObservableObject {
     }
 
     func cycle() {
-        let next: Bool?
-        switch override {
-        case nil: next = true
-        case true: next = false
-        case false: next = nil
-        }
-        L.languageOverride = next
-        override = next
+        override.toggle()
+        L.languageOverride = override
     }
 }
 
 /// Bilingual string helper — detects system language at runtime, with user override.
 enum L {
-    /// nil = follow system, true = force Chinese, false = force English
+    /// nil only appears for legacy preferences; UI always stores a concrete language.
     static var languageOverride: Bool? {
         get {
             let d = UserDefaults.standard
@@ -63,6 +50,10 @@ enum L {
 
     static var zh: Bool {
         if let override = languageOverride { return override }
+        return systemIsChinese
+    }
+
+    static var systemIsChinese: Bool {
         let lang = Locale.current.language.languageCode?.identifier ?? ""
         return lang.hasPrefix("zh")
     }
