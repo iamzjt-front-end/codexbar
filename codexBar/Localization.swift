@@ -40,12 +40,12 @@ enum L {
     static var cancel: String          { zh ? "取消"               : "Cancel" }
     static var justUpdated: String     { zh ? "刚刚更新"            : "Just updated" }
     static var restartCodexTitle: String {
-        zh ? "Codex.app 正在运行" : "Codex.app is Running"
+        zh ? "切换账号需要重启 Codex" : "Switching Account Requires Restarting Codex"
     }
     static var restartCodexInfo: String {
         zh
-            ? "账号已切换完成。\n\n如需立即生效，可强制退出 Codex.app（可选是否自动重新打开）。\n\n⚠️ 警告：强制退出将终止所有 subagent 任务，可能导致进行中的任务丢失，请谨慎操作。"
-            : "Account switched successfully.\n\nYou may force-quit Codex.app now to apply the change (optionally reopen it).\n\n⚠️ Warning: Force-quitting will kill all running subagent tasks. Make sure no important tasks are in progress."
+            ? "切换账号需要关闭并重新打开 Codex.app 才能生效。是否继续？"
+            : "Switching account requires quitting and reopening Codex.app to take effect. Continue?"
     }
     static var forceQuitAndReopen: String { zh ? "强制退出并重新打开" : "Force Quit & Reopen" }
     static var forceQuitOnly: String    { zh ? "仅强制退出" : "Force Quit Only" }
@@ -121,4 +121,15 @@ enum L {
     static func resetInDay(_ d: Int, _ h: Int) -> String {
         zh ? "\(d) 天 \(h) 小时后重置" : "Resets in \(d)d \(h)h"
     }
+
+    // MARK: - Token stats
+    static var tokenRangeToday: String { zh ? "今日" : "Today" }
+    static var tokenRangeWeek: String  { zh ? "本周" : "This Week" }
+    static var tokenRangeMonth: String { zh ? "本月" : "This Month" }
+    static var tokenTotal: String      { zh ? "Token 用量" : "Tokens Used" }
+    static func tokenThreadCount(_ n: Int) -> String {
+        zh ? "\(n) 个会话" : "\(n) threads"
+    }
+    static var heatmapLess: String { zh ? "少" : "Less" }
+    static var heatmapMore: String { zh ? "多" : "More" }
 }
