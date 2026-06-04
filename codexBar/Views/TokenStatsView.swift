@@ -50,20 +50,18 @@ struct TokenStatsView: View {
 
 enum TokenFormat {
     /// zh: 12345 -> "1.2万", 2160000000 -> "21.6亿"
-    /// en: 1234 -> "1.23K", 1234567 -> "1.23M", 1234000000 -> "1.23B"
+    /// en: 1234 -> "1.2K", 1234567 -> "1.2M", 1234000000 -> "1.2B"
     static func compact(_ n: Int) -> String {
         if L.zh { return compactChinese(n) }
 
         let v = Double(n)
         switch n {
         case 1_000_000_000...:
-            return format(v / 1_000_000_000, suffix: "B", decimals: 2)
+            return format(v / 1_000_000_000, suffix: "B", decimals: 1)
         case 1_000_000...:
-            return format(v / 1_000_000, suffix: "M", decimals: 2)
-        case 10_000...:
-            return format(v / 1_000, suffix: "K", decimals: 1)
+            return format(v / 1_000_000, suffix: "M", decimals: 1)
         case 1_000...:
-            return format(v / 1_000, suffix: "K", decimals: 2)
+            return format(v / 1_000, suffix: "K", decimals: 1)
         default:
             return "\(n)"
         }
