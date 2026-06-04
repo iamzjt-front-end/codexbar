@@ -4,10 +4,12 @@ import SwiftUI
 struct codexBarApp: App {
     @StateObject private var store = TokenStore.shared
     @StateObject private var oauth = OAuthManager.shared
+    @StateObject private var language = LanguageSettings.shared
+    @StateObject private var refreshFrequency = RefreshFrequencySettings.shared
 
     init() {
         // App 级后台续期，脱离菜单 View 生命周期（菜单关闭时 View 不存在，其内 Timer 不跑）
-        BackgroundRefresher.shared.start(interval: 300)
+        BackgroundRefresher.shared.start(interval: RefreshFrequencySettings.shared.selection.backgroundInterval)
     }
 
     var body: some Scene {
@@ -15,8 +17,11 @@ struct codexBarApp: App {
             MenuBarView()
                 .environmentObject(store)
                 .environmentObject(oauth)
+                .environmentObject(language)
+                .environmentObject(refreshFrequency)
         } label: {
             MenuBarIconView(store: store)
+                .environmentObject(language)
         }
         .menuBarExtraStyle(.window)
     }
@@ -25,6 +30,7 @@ struct codexBarApp: App {
 /// 菜单栏图标：显示 terminal 图标 + 活跃账号的 5h / 周额度
 struct MenuBarIconView: View {
     @ObservedObject var store: TokenStore
+    @EnvironmentObject var language: LanguageSettings
 
     var body: some View {
         HStack(spacing: 3) {
@@ -47,6 +53,7 @@ struct MenuBarIconView: View {
                 }
             }
         }
+        .id(language.identity)
     }
 
     private var iconName: String {

@@ -2,6 +2,8 @@ import SwiftUI
 
 /// One org/account row under an email group
 struct AccountRowView: View {
+    @EnvironmentObject var language: LanguageSettings
+
     let account: TokenAccount
     let isActive: Bool
     let now: Date
@@ -191,6 +193,7 @@ struct AccountRowView: View {
                     .padding(.vertical, 4)
             }
         }
+        .id(language.identity)
     }
 
     private var displayName: String {

@@ -11,11 +11,13 @@ final class BackgroundRefresher {
     private var timer: Timer?
     private let store = TokenStore.shared
 
-    /// 启动：立即跑一次，之后每 interval 秒跑一次
-    func start(interval: TimeInterval = 300) {
+    /// 启动：可立即跑一次，之后每 interval 秒跑一次
+    func start(interval: TimeInterval = 300, runImmediately: Bool = true) {
         stop()
-        // 启动时立即检查一次（覆盖"开机就有账号临近过期"）
-        Task { await tick() }
+        if runImmediately {
+            // 启动时立即检查一次（覆盖"开机就有账号临近过期"）
+            Task { await tick() }
+        }
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { await self.tick() }

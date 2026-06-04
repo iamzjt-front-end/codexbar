@@ -1,4 +1,47 @@
+import Combine
 import Foundation
+
+@MainActor
+final class LanguageSettings: ObservableObject {
+    static let shared = LanguageSettings()
+
+    @Published private(set) var override: Bool?
+
+    private init() {
+        override = L.languageOverride
+    }
+
+    var identity: String {
+        switch override {
+        case nil: return "auto"
+        case true: return "zh"
+        case false: return "en"
+        }
+    }
+
+    var buttonLabel: String {
+        switch override {
+        case nil: return "AUTO"
+        case true: return "中"
+        case false: return "EN"
+        }
+    }
+
+    var switchLanguageHelp: String {
+        L.zh ? "切换语言" : "Switch Language"
+    }
+
+    func cycle() {
+        let next: Bool?
+        switch override {
+        case nil: next = true
+        case true: next = false
+        case false: next = nil
+        }
+        L.languageOverride = next
+        override = next
+    }
+}
 
 /// Bilingual string helper — detects system language at runtime, with user override.
 enum L {
@@ -32,6 +75,9 @@ enum L {
     static var noAccounts: String      { zh ? "还没有账号"          : "No Accounts" }
     static var addAccountHint: String  { zh ? "点击下方 + 添加账号"   : "Tap + below to add an account" }
     static var refreshUsage: String    { zh ? "刷新用量"            : "Refresh Usage" }
+    static func refreshFrequencyHelp(_ detail: String) -> String {
+        zh ? "额度刷新频率：\(detail)" : "Quota refresh frequency: \(detail)"
+    }
     static var addAccount: String      { zh ? "添加账号"            : "Add Account" }
     static var quit: String            { zh ? "退出"               : "Quit" }
     static var switchAccount: String    { zh ? "切换账号"            : "Switch Account" }

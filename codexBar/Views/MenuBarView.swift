@@ -6,19 +6,18 @@ import UserNotifications
 struct MenuBarView: View {
     @EnvironmentObject var store: TokenStore
     @EnvironmentObject var oauth: OAuthManager
+    @EnvironmentObject var language: LanguageSettings
+    @EnvironmentObject var refreshFrequency: RefreshFrequencySettings
     @State private var isRefreshing = false
     @State private var showError: String?
     @State private var showSuccess: String?
     @State private var now = Date()
     @State private var refreshingAccounts: Set<String> = []
+    @State private var lastVisibleRefresh = Date()
 
-    // 每 10 秒刷新倒计时显示
-    private let countdownTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
-    // 菜单打开时 10 秒快速刷新活跃账号；菜单关闭时 5 分钟后台刷新全部
-    private let quickTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
-    private let slowTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+    // 每秒刷新相对时间显示，并按用户选择的频率决定是否拉取额度。
+    private let tickTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     @State private var menuVisible = false
-    @State private var languageToggle = false  // 用于触发语言切换后的重绘
 
     /// email → accounts (sorted: active first, then by status)
     private var groupedAccounts: [(email: String, accounts: [TokenAccount])] {
@@ -224,20 +223,27 @@ struct MenuBarView: View {
                 .help(L.addAccount)
 
                 Button {
-                    switch L.languageOverride {
-                    case nil:   L.languageOverride = true
-                    case true:  L.languageOverride = false
-                    case false: L.languageOverride = nil
-                    }
-                    languageToggle.toggle()
+                    refreshFrequency.cycle()
+                    lastVisibleRefresh = .distantPast
                 } label: {
-                    // languageToggle 作为 @State 依赖，保证切换后重绘
-                    let label = languageToggle ? L.languageOverride : L.languageOverride
-                    Text(label == nil ? "AUTO" : (label == true ? "中" : "EN"))
+                    HStack(spacing: 2) {
+                        Image(systemName: "timer")
+                            .font(.system(size: 11))
+                        Text(refreshFrequency.buttonLabel)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                }
+                .buttonStyle(.borderless)
+                .help(refreshFrequency.helpText)
+
+                Button {
+                    language.cycle()
+                } label: {
+                    Text(language.buttonLabel)
                         .font(.system(size: 10, weight: .medium))
                 }
                 .buttonStyle(.borderless)
-                .help("切换语言 / Switch Language")
+                .help(language.switchLanguageHelp)
 
                 Button {
                     NSApplication.shared.terminate(nil)
@@ -251,32 +257,30 @@ struct MenuBarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
+        .id(language.identity)
         .frame(width: 300)
-        .onReceive(countdownTimer) { _ in now = Date() }
-        .onReceive(quickTimer) { _ in
+        .onReceive(tickTimer) { tickDate in
+            now = tickDate
             guard menuVisible,
                   let active = store.accounts.first(where: { $0.isActive }),
                   !active.secondaryExhausted else { return }
+            guard tickDate.timeIntervalSince(lastVisibleRefresh) >= refreshFrequency.selection.visibleInterval else { return }
+            lastVisibleRefresh = tickDate
             Task {
                 await refreshAccount(active)
                 store.markActiveAccount()
             }
         }
-        .onReceive(slowTimer) { _ in
-            Task {
-                if !menuVisible { await refresh() }
-                store.markActiveAccount()
-            }
-        }
         .onAppear {
             menuVisible = true
+            lastVisibleRefresh = Date()
             store.markActiveAccount()
         }
         .onDisappear { menuVisible = false }
     }
 
     private func relativeTime(_ date: Date) -> String {
-        let seconds = Int(Date().timeIntervalSince(date))
+        let seconds = Int(now.timeIntervalSince(date))
         if seconds < 60 { return L.justUpdated }
         if seconds < 3600 { return L.minutesAgo(seconds / 60) }
         return L.hoursAgo(seconds / 3600)
@@ -356,6 +360,7 @@ struct MenuBarView: View {
         isRefreshing = true
         await RefreshService.shared.refreshExpiring(store: store)
         await WhamService.shared.refreshAll(store: store)
+        lastVisibleRefresh = Date()
         isRefreshing = false
     }
 

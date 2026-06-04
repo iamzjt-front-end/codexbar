@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TokenStatsView: View {
+    @EnvironmentObject var language: LanguageSettings
     @ObservedObject var service: TokenStatsService = .shared
 
     var body: some View {
@@ -40,6 +41,7 @@ struct TokenStatsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .id(language.identity)
         .onAppear { service.refresh() }
     }
 }
