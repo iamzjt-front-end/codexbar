@@ -8,6 +8,7 @@ struct MenuBarView: View {
     @EnvironmentObject var oauth: OAuthManager
     @EnvironmentObject var language: LanguageSettings
     @EnvironmentObject var refreshFrequency: RefreshFrequencySettings
+    @EnvironmentObject var codexHookInstaller: CodexHookInstallerService
     @State private var isRefreshing = false
     @State private var showError: String?
     @State private var showSuccess: String?
@@ -85,6 +86,16 @@ struct MenuBarView: View {
                         .cornerRadius(4)
                 }
 
+                if codexHookInstaller.state.needsAction {
+                    Text(L.codexHookSetupBadge)
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .cornerRadius(4)
+                }
+
                 Spacer()
 
                 Button {
@@ -102,6 +113,15 @@ struct MenuBarView: View {
             .padding(.vertical, 8)
 
             Divider()
+
+            if codexHookInstaller.state.needsAction {
+                CodexHookSetupRow(
+                    state: codexHookInstaller.state,
+                    installAction: installCodexHooks
+                )
+
+                Divider()
+            }
 
             if store.accounts.isEmpty {
                 VStack(spacing: 8) {
@@ -274,6 +294,7 @@ struct MenuBarView: View {
             menuVisible = true
             lastVisibleRefresh = Date()
             store.markActiveAccount()
+            codexHookInstaller.refresh()
             TokenStatsService.shared.refresh()
         }
         .onDisappear { menuVisible = false }
@@ -313,6 +334,24 @@ struct MenuBarView: View {
             return
         }
         forceQuitCodex(running, reopen: true)
+    }
+
+    private func installCodexHooks() {
+        let alert = NSAlert()
+        alert.messageText = L.codexHookInstallConfirmTitle
+        alert.informativeText = L.codexHookInstallConfirmInfo(codexHookInstaller.hooksURL.path)
+        alert.addButton(withTitle: L.codexHookInstallConfirmButton)
+        alert.addButton(withTitle: L.cancel)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try codexHookInstaller.install()
+            showSuccess = L.codexHookInstallSuccess
+            showError = nil
+        } catch {
+            showError = L.codexHookInstallFailed(error.localizedDescription)
+            showSuccess = nil
+        }
     }
 
     private func sendNotification(title: String, body: String) {
@@ -407,5 +446,57 @@ struct MenuBarView: View {
                 showError = error.localizedDescription
             }
         }
+    }
+}
+
+private struct CodexHookSetupRow: View {
+    let state: CodexHookInstallState
+    let installAction: () -> Void
+
+    private var title: String {
+        switch state {
+        case .needsUpdate:
+            return L.codexHookUpdateTitle
+        case .error:
+            return L.codexHookErrorTitle
+        case .checking, .missing, .installed:
+            return L.codexHookSetupTitle
+        }
+    }
+
+    private var buttonTitle: String {
+        state == .needsUpdate ? L.codexHookUpdateButton : L.codexHookInstallButton
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.orange)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+
+                Text(L.codexHookSetupDetail)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 6)
+
+            Button(action: installAction) {
+                Text(buttonTitle)
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .buttonStyle(.borderless)
+            .foregroundColor(.accentColor)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 }

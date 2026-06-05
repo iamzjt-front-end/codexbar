@@ -61,6 +61,56 @@ enum L {
     // MARK: - Status Bar
     static var weeklyLimit: String { zh ? "周限额" : "Weekly Limit" }
     static var hourLimit: String   { zh ? "5h限额" : "5h Limit" }
+    static var codexSessionOffline: String { zh ? "Codex 未连接" : "Codex offline" }
+    static var codexSessionReady: String { zh ? "Codex 已就绪" : "Codex ready" }
+    static var codexSessionRunningGeneric: String { zh ? "Codex 正在运行" : "Codex running" }
+    static func codexSessionRunning(_ phase: String) -> String {
+        zh ? "Codex 正在\(phase)" : "Codex running: \(phase)"
+    }
+    static var codexSessionNeedsAttention: String { zh ? "Codex 需要处理" : "Codex needs attention" }
+    static var codexSessionStatusUnreadable: String { zh ? "状态不可读取" : "Status unreadable" }
+    static var codexSessionStatusStale: String { zh ? "状态已过期" : "Status stale" }
+    static var codexHookTooltipNeedsInstall: String {
+        zh ? "需要安装并信任 Codex 钩子，红绿灯才能显示当前会话状态" : "Install and trust Codex hooks to show live conversation status"
+    }
+    static var codexHookSetupBadge: String { zh ? "钩子未装" : "Hooks" }
+    static var codexHookSetupTitle: String {
+        zh ? "安装并信任 Codex 钩子" : "Install and trust Codex hooks"
+    }
+    static var codexHookUpdateTitle: String {
+        zh ? "更新 Codex 钩子" : "Update Codex hooks"
+    }
+    static var codexHookErrorTitle: String {
+        zh ? "Codex 钩子配置异常" : "Codex hook config issue"
+    }
+    static var codexHookSetupDetail: String {
+        zh
+            ? "红绿灯需要通过 Codex hooks 获取当前会话的运行、就绪和权限状态。安装后，Codex 提示时请信任这个 hook。"
+            : "Traffic lights use Codex hooks to read running, ready, and permission states. After installing, trust this hook when Codex asks."
+    }
+    static var codexHookInstallButton: String { zh ? "安装钩子" : "Install Hooks" }
+    static var codexHookUpdateButton: String { zh ? "更新钩子" : "Update Hooks" }
+    static var codexHookInstallConfirmTitle: String {
+        zh ? "安装 CodexAppBar 钩子？" : "Install CodexAppBar hooks?"
+    }
+    static func codexHookInstallConfirmInfo(_ path: String) -> String {
+        zh
+            ? "将备份并合并写入 \(path)。Codex 下次提示信任 hook 时，请选择信任。"
+            : "This will back up and merge changes into \(path). When Codex asks to trust the hook, choose trust."
+    }
+    static var codexHookInstallConfirmButton: String { zh ? "安装" : "Install" }
+    static var codexHookInstallSuccess: String {
+        zh ? "Codex 钩子已安装；Codex 提示时请信任 hook" : "Codex hooks installed; trust the hook when Codex asks"
+    }
+    static func codexHookInstallFailed(_ reason: String) -> String {
+        zh ? "Codex 钩子安装失败：\(reason)" : "Failed to install Codex hooks: \(reason)"
+    }
+    static var codexHookScriptMissing: String {
+        zh ? "找不到随 App 打包的 hook 脚本" : "Bundled hook script is missing"
+    }
+    static var codexHookInvalidConfig: String {
+        zh ? "hooks.json 不是有效的对象格式" : "hooks.json is not a valid object"
+    }
 
     // MARK: - MenuBarView
     static var noAccounts: String      { zh ? "还没有账号"          : "No Accounts" }
