@@ -59,28 +59,34 @@ struct AccountRowView: View {
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.borderless)
+                .focusable(false)
                 .foregroundColor(.secondary)
 
                 if account.tokenExpired {
                     Button(L.reauth, action: onReauth)
                         .buttonStyle(.borderedProminent)
+                        .focusable(false)
                         .controlSize(.mini)
                         .font(.system(size: 10, weight: .medium))
                         .tint(.orange)
                 } else if !account.isBanned {
                     Button(action: onRefresh) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 10))
-                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                            .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                        RefreshIconView(
+                            isRefreshing: isRefreshing,
+                            size: 14,
+                            fontSize: 10,
+                            weight: .medium
+                        )
                     }
                     .buttonStyle(.borderless)
+                    .focusable(false)
                     .foregroundColor(.secondary)
                     .disabled(isRefreshing)
 
                     if !isActive {
                         Button(L.switchBtn, action: onActivate)
                             .buttonStyle(.borderedProminent)
+                            .focusable(false)
                             .controlSize(.mini)
                             .font(.system(size: 10, weight: .medium))
                     }

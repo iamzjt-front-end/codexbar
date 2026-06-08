@@ -162,7 +162,7 @@ private final class AppStatusBarController: NSObject {
         popover.behavior = .transient
         popover.animates = true
         popover.contentSize = NSSize(width: 300, height: 620)
-        popover.contentViewController = NSHostingController(
+        popover.contentViewController = FirstMouseHostingController(
             rootView: MenuBarView()
                 .environmentObject(store)
                 .environmentObject(oauth)
@@ -199,6 +199,32 @@ private final class AppStatusBarController: NSObject {
             return "bolt.circle.fill"
         }
         return "terminal.fill"
+    }
+}
+
+private final class FirstMouseHostingController<Content: View>: NSViewController {
+    private let rootView: Content
+
+    init(rootView: Content) {
+        self.rootView = rootView
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func loadView() {
+        view = FirstMouseHostingView(rootView: rootView)
+    }
+}
+
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override var acceptsFirstResponder: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
     }
 }
 

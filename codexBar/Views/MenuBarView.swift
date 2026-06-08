@@ -101,11 +101,15 @@ struct MenuBarView: View {
                 Button {
                     Task { await refresh() }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                        .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                    RefreshIconView(
+                        isRefreshing: isRefreshing,
+                        size: 18,
+                        fontSize: 13,
+                        weight: .medium
+                    )
                 }
                 .buttonStyle(.borderless)
+                .focusable(false)
                 .help(L.refreshUsage)
                 .disabled(isRefreshing)
             }
@@ -202,6 +206,7 @@ struct MenuBarView: View {
                         Image(systemName: "xmark")
                     }
                     .buttonStyle(.borderless)
+                    .focusable(false)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -240,6 +245,7 @@ struct MenuBarView: View {
                         .font(.system(size: 12))
                 }
                 .buttonStyle(.borderless)
+                .focusable(false)
                 .help(L.addAccount)
 
                 Button {
@@ -254,6 +260,7 @@ struct MenuBarView: View {
                     }
                 }
                 .buttonStyle(.borderless)
+                .focusable(false)
                 .help(refreshFrequency.helpText)
 
                 Button {
@@ -263,6 +270,7 @@ struct MenuBarView: View {
                         .font(.system(size: 10, weight: .medium))
                 }
                 .buttonStyle(.borderless)
+                .focusable(false)
                 .help(language.switchLanguageHelp)
 
                 Button {
@@ -272,6 +280,7 @@ struct MenuBarView: View {
                         .font(.system(size: 12))
                 }
                 .buttonStyle(.borderless)
+                .focusable(false)
                 .help(L.quit)
             }
             .padding(.horizontal, 12)
@@ -396,12 +405,18 @@ struct MenuBarView: View {
     }
 
     private func refresh() async {
+        let accountIDs = Set(store.accounts.map(\.id))
         isRefreshing = true
+        refreshingAccounts.formUnion(accountIDs)
+        defer {
+            isRefreshing = false
+            refreshingAccounts.subtract(accountIDs)
+        }
+
         await RefreshService.shared.refreshExpiring(store: store)
         await WhamService.shared.refreshAll(store: store)
         lastVisibleRefresh = Date()
         TokenStatsService.shared.refresh()
-        isRefreshing = false
     }
 
     private func refreshAccount(_ account: TokenAccount) async {
@@ -494,6 +509,7 @@ private struct CodexHookSetupRow: View {
                     .font(.system(size: 10, weight: .semibold))
             }
             .buttonStyle(.borderless)
+            .focusable(false)
             .foregroundColor(.accentColor)
         }
         .padding(.horizontal, 12)
