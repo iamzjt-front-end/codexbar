@@ -8,12 +8,25 @@ struct AccountBuilder {
 
         let chatgptAccountId = authClaims["chatgpt_account_id"] as? String ?? ""
         let userId = authClaims["user_id"] as? String ?? ""
-        let accountId = !chatgptAccountId.isEmpty ? chatgptAccountId : userId
         let planType = authClaims["chatgpt_plan_type"] as? String ?? "free"
 
         // 从 id_token 取 email
         let idClaims = decodeJWT(tokens.idToken)
         let email = idClaims["email"] as? String ?? ""
+
+        // accountId 唯一性优先级：chatgpt_account_id(workspace 级唯一) > email(账号级唯一)
+        // > user_id(仅标识人，同一人多账号会撞，最后兜底)。
+        // 用 email 兜底避免：同一 OpenAI 用户的不同账号/workspace 共享 user_id 时互相覆盖。
+        let accountId: String
+        if !chatgptAccountId.isEmpty {
+            accountId = chatgptAccountId
+        } else if !email.isEmpty {
+            accountId = "email:\(email)"
+        } else if !userId.isEmpty {
+            accountId = userId
+        } else {
+            accountId = ""
+        }
 
         // 订阅到期时间（从 id_token 的 auth claim 取）
         let idAuthClaims = idClaims["https://api.openai.com/auth"] as? [String: Any] ?? [:]
