@@ -45,3 +45,6 @@ fastlane/test_output
 *.provisionprofile
 dist/
 codexBar/Assets.xcassets/AppIcon.appiconset.bak*/
+
+# Cockpit panel work files
+.cockpit/
