@@ -88,6 +88,8 @@ class TokenStore: ObservableObject {
 
     /// 将指定账号写入 ~/.codex/auth.json，激活为当前 Codex 使用账号
     func activate(_ account: TokenAccount) throws {
+        // 守护：空 id_token 会让 Codex 报 "invalid ID token format" 并要求重登，绝不写入
+        guard !account.idToken.isEmpty else { throw TokenStoreError.missingIdToken }
         let authDict = buildAuthJSON(account)
         guard JSONSerialization.isValidJSONObject(authDict),
               let data = try? JSONSerialization.data(withJSONObject: authDict, options: [.prettyPrinted, .sortedKeys]) else {
@@ -142,5 +144,11 @@ class TokenStore: ObservableObject {
 
 enum TokenStoreError: LocalizedError {
     case encodingFailed
-    var errorDescription: String? { "写入 auth.json 失败" }
+    case missingIdToken
+    var errorDescription: String? {
+        switch self {
+        case .encodingFailed: return "写入 auth.json 失败"
+        case .missingIdToken: return "账号缺少 id_token，无法激活"
+        }
+    }
 }
