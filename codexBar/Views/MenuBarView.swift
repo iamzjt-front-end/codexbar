@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 import UserNotifications
+import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @EnvironmentObject var store: TokenStore
@@ -218,6 +219,15 @@ struct MenuBarView: View {
                 .help(L.addAccount)
 
                 Button {
+                    importAccounts()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .help(L.importAccount)
+
+                Button {
                     switch L.languageOverride {
                     case nil:   L.languageOverride = true
                     case true:  L.languageOverride = false
@@ -351,6 +361,29 @@ struct MenuBarView: View {
         await RefreshService.shared.refreshExpiring(store: store)
         await WhamService.shared.refreshAll(store: store)
         isRefreshing = false
+    }
+
+    private func importAccounts() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = L.importAccount
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url) else { return }
+        do {
+            let accounts = try AccountImporter.parse(data)
+            for acc in accounts { store.addOrUpdate(acc) }
+            showSuccess = L.importedCount(accounts.count)
+            let imported = accounts
+            Task {
+                for acc in imported {
+                    await WhamService.shared.refreshOne(account: acc, store: store)
+                }
+            }
+        } catch {
+            showError = error.localizedDescription
+        }
     }
 
     private func refreshAccount(_ account: TokenAccount) async {

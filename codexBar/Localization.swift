@@ -33,6 +33,10 @@ enum L {
     static var addAccountHint: String  { zh ? "点击下方 + 添加账号"   : "Tap + below to add an account" }
     static var refreshUsage: String    { zh ? "刷新用量"            : "Refresh Usage" }
     static var addAccount: String      { zh ? "添加账号"            : "Add Account" }
+    static var importAccount: String   { zh ? "导入账号 JSON"       : "Import Accounts JSON" }
+    static func importedCount(_ n: Int) -> String {
+        zh ? "已导入 \(n) 个账号" : "Imported \(n) account(s)"
+    }
     static var quit: String            { zh ? "退出"               : "Quit" }
     static var switchAccount: String    { zh ? "切换账号"            : "Switch Account" }
     static var switchTitle: String     { zh ? "切换账号"            : "Switch Account" }
