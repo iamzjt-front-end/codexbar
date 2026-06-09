@@ -50,13 +50,21 @@ struct AccountImporter {
                 accessToken: access, refreshToken: refresh, idToken: idToken
             ))
 
-            // 用导出文件的现成字段兜底（token 解析不出来时）
+            // chatgptAccountId 兜底（API/auth.json 用）
+            if account.chatgptAccountId.isEmpty, let cid = cred["chatgpt_account_id"] as? String, !cid.isEmpty {
+                account.chatgptAccountId = cid
+            }
+            // accountId（去重键）兜底：token 解析不出来时
             if account.accountId.isEmpty {
                 if let cid = cred["chatgpt_account_id"] as? String, !cid.isEmpty {
                     account.accountId = cid
                 } else if let em = cred["email"] as? String, !em.isEmpty {
                     account.accountId = "email:\(em)"
                 }
+            }
+            // chatgptAccountId 最终兜底到 accountId（保证 API header 非空）
+            if account.chatgptAccountId.isEmpty {
+                account.chatgptAccountId = account.accountId
             }
             if account.email.isEmpty, let em = cred["email"] as? String {
                 account.email = em

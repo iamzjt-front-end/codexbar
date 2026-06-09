@@ -3,7 +3,8 @@ import Foundation
 struct TokenAccount: Codable, Identifiable {
     var id: String { accountId }
     var email: String
-    var accountId: String
+    var accountId: String            // 去重唯一键：team 下用 chatgpt_account_user_id（含成员），保证不同成员不撞
+    var chatgptAccountId: String     // workspace 级 id：API header / auth.json / Codex 对齐用
     var accessToken: String
     var refreshToken: String
     var idToken: String
@@ -22,6 +23,7 @@ struct TokenAccount: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case email
         case accountId = "account_id"
+        case chatgptAccountId = "chatgpt_account_id"
         case organizationName = "organization_name"
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
@@ -42,6 +44,8 @@ struct TokenAccount: Codable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         email = try c.decode(String.self, forKey: .email)
         accountId = try c.decode(String.self, forKey: .accountId)
+        // 旧 pool 没这字段 → 兜底用 accountId（旧 accountId 就是 chatgpt_account_id）
+        chatgptAccountId = try c.decodeIfPresent(String.self, forKey: .chatgptAccountId) ?? accountId
         accessToken = try c.decode(String.self, forKey: .accessToken)
         refreshToken = try c.decode(String.self, forKey: .refreshToken)
         idToken = try c.decode(String.self, forKey: .idToken)
@@ -58,7 +62,7 @@ struct TokenAccount: Codable, Identifiable {
         organizationName = try c.decodeIfPresent(String.self, forKey: .organizationName)
     }
 
-    init(email: String = "", accountId: String = "", accessToken: String = "",
+    init(email: String = "", accountId: String = "", chatgptAccountId: String = "", accessToken: String = "",
          refreshToken: String = "", idToken: String = "", expiresAt: Date? = nil,
          planType: String = "free", primaryUsedPercent: Double = 0,
          secondaryUsedPercent: Double = 0,
@@ -67,6 +71,7 @@ struct TokenAccount: Codable, Identifiable {
          organizationName: String? = nil) {
         self.email = email
         self.accountId = accountId
+        self.chatgptAccountId = chatgptAccountId.isEmpty ? accountId : chatgptAccountId
         self.accessToken = accessToken
         self.refreshToken = refreshToken
         self.idToken = idToken

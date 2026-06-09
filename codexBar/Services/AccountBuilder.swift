@@ -7,6 +7,8 @@ struct AccountBuilder {
         let authClaims = claims["https://api.openai.com/auth"] as? [String: Any] ?? [:]
 
         let chatgptAccountId = authClaims["chatgpt_account_id"] as? String ?? ""
+        // chatgpt_account_user_id = "{user_id}__{account_id}"，team workspace 内唯一标识成员
+        let chatgptAccountUserId = authClaims["chatgpt_account_user_id"] as? String ?? ""
         let userId = authClaims["user_id"] as? String ?? ""
         let planType = authClaims["chatgpt_plan_type"] as? String ?? "free"
 
@@ -19,11 +21,13 @@ struct AccountBuilder {
             email = profile["email"] as? String ?? ""
         }
 
-        // accountId 唯一性优先级：chatgpt_account_id(workspace 级唯一) > email(账号级唯一)
-        // > user_id(仅标识人，同一人多账号会撞，最后兜底)。
-        // 用 email 兜底避免：同一 OpenAI 用户的不同账号/workspace 共享 user_id 时互相覆盖。
+        // accountId = 去重唯一键。优先 chatgpt_account_user_id（team workspace 内唯一标识成员，
+        // 避免同一 workspace 不同成员共享 chatgpt_account_id 时互相覆盖）；
+        // 否则退到 chatgpt_account_id > email > user_id。
         let accountId: String
-        if !chatgptAccountId.isEmpty {
+        if !chatgptAccountUserId.isEmpty {
+            accountId = chatgptAccountUserId
+        } else if !chatgptAccountId.isEmpty {
             accountId = chatgptAccountId
         } else if !email.isEmpty {
             accountId = "email:\(email)"
@@ -50,6 +54,7 @@ struct AccountBuilder {
         return TokenAccount(
             email: email,
             accountId: accountId,
+            chatgptAccountId: chatgptAccountId,
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             idToken: tokens.idToken,

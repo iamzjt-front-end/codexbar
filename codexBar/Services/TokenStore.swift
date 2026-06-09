@@ -108,11 +108,18 @@ class TokenStore: ObservableObject {
     func markActiveAccount() {
         guard let data = try? Data(contentsOf: authURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tokens = json["tokens"] as? [String: Any],
-              let accountId = tokens["account_id"] as? String else { return }
+              let tokens = json["tokens"] as? [String: Any] else { return }
+        // 用 access_token 精确匹配激活账号：team workspace 多成员共享 chatgpt_account_id，
+        // 仅靠 account_id 无法区分是哪个成员，access_token 才能定位到具体成员。
+        let activeAccess = tokens["access_token"] as? String
+        let activeAcctId = tokens["account_id"] as? String
 
         for idx in accounts.indices {
-            accounts[idx].isActive = (accounts[idx].accountId == accountId)
+            if let activeAccess, !activeAccess.isEmpty {
+                accounts[idx].isActive = (accounts[idx].accessToken == activeAccess)
+            } else if let activeAcctId {
+                accounts[idx].isActive = (accounts[idx].chatgptAccountId == activeAcctId)
+            }
         }
         save()
     }
@@ -122,7 +129,7 @@ class TokenStore: ObservableObject {
             "access_token": account.accessToken,
             "refresh_token": account.refreshToken,
             "id_token": account.idToken,
-            "account_id": account.accountId,
+            "account_id": account.chatgptAccountId,
         ]
         return [
             "auth_mode": "chatgpt",
