@@ -10,9 +10,14 @@ struct AccountBuilder {
         let userId = authClaims["user_id"] as? String ?? ""
         let planType = authClaims["chatgpt_plan_type"] as? String ?? "free"
 
-        // 从 id_token 取 email
+        // 取 email：优先 id_token，缺失/解析失败时从 access_token 的 profile 兜底
+        // （team/SSO 账号导入时可能没有 id_token，但 access_token 一定带 profile.email）
         let idClaims = decodeJWT(tokens.idToken)
-        let email = idClaims["email"] as? String ?? ""
+        var email = idClaims["email"] as? String ?? ""
+        if email.isEmpty {
+            let profile = claims["https://api.openai.com/profile"] as? [String: Any] ?? [:]
+            email = profile["email"] as? String ?? ""
+        }
 
         // accountId 唯一性优先级：chatgpt_account_id(workspace 级唯一) > email(账号级唯一)
         // > user_id(仅标识人，同一人多账号会撞，最后兜底)。
