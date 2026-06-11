@@ -12,7 +12,7 @@ class WhamService {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(account.accountId, forHTTPHeaderField: "chatgpt-account-id")
+        request.setValue(account.chatgptAccountId, forHTTPHeaderField: "chatgpt-account-id")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("zh-CN", forHTTPHeaderField: "oai-language")
         request.setValue(
@@ -44,7 +44,7 @@ class WhamService {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(account.accountId, forHTTPHeaderField: "chatgpt-account-id")
+        request.setValue(account.chatgptAccountId, forHTTPHeaderField: "chatgpt-account-id")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("zh-CN", forHTTPHeaderField: "oai-language")
         request.setValue(
@@ -54,7 +54,7 @@ class WhamService {
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let accounts = json["accounts"] as? [String: Any],
-              let entry = accounts[account.accountId] as? [String: Any],
+              let entry = accounts[account.chatgptAccountId] as? [String: Any],
               let acct = entry["account"] as? [String: Any],
               let name = acct["name"] as? String else { return nil }
         return name

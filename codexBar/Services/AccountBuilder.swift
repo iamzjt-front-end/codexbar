@@ -7,13 +7,35 @@ struct AccountBuilder {
         let authClaims = claims["https://api.openai.com/auth"] as? [String: Any] ?? [:]
 
         let chatgptAccountId = authClaims["chatgpt_account_id"] as? String ?? ""
+        // chatgpt_account_user_id = "{user_id}__{account_id}"，team workspace 内唯一标识成员
+        let chatgptAccountUserId = authClaims["chatgpt_account_user_id"] as? String ?? ""
         let userId = authClaims["user_id"] as? String ?? ""
-        let accountId = !chatgptAccountId.isEmpty ? chatgptAccountId : userId
         let planType = authClaims["chatgpt_plan_type"] as? String ?? "free"
 
-        // 从 id_token 取 email
+        // 取 email：优先 id_token，缺失/解析失败时从 access_token 的 profile 兜底
+        // （team/SSO 账号导入时可能没有 id_token，但 access_token 一定带 profile.email）
         let idClaims = decodeJWT(tokens.idToken)
-        let email = idClaims["email"] as? String ?? ""
+        var email = idClaims["email"] as? String ?? ""
+        if email.isEmpty {
+            let profile = claims["https://api.openai.com/profile"] as? [String: Any] ?? [:]
+            email = profile["email"] as? String ?? ""
+        }
+
+        // accountId = 去重唯一键。优先 chatgpt_account_user_id（team workspace 内唯一标识成员，
+        // 避免同一 workspace 不同成员共享 chatgpt_account_id 时互相覆盖）；
+        // 否则退到 chatgpt_account_id > email > user_id。
+        let accountId: String
+        if !chatgptAccountUserId.isEmpty {
+            accountId = chatgptAccountUserId
+        } else if !chatgptAccountId.isEmpty {
+            accountId = chatgptAccountId
+        } else if !email.isEmpty {
+            accountId = "email:\(email)"
+        } else if !userId.isEmpty {
+            accountId = userId
+        } else {
+            accountId = ""
+        }
 
         // 订阅到期时间（从 id_token 的 auth claim 取）
         let idAuthClaims = idClaims["https://api.openai.com/auth"] as? [String: Any] ?? [:]
@@ -32,6 +54,7 @@ struct AccountBuilder {
         return TokenAccount(
             email: email,
             accountId: accountId,
+            chatgptAccountId: chatgptAccountId,
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             idToken: tokens.idToken,

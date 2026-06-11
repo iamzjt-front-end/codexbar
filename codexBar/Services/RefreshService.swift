@@ -169,7 +169,19 @@ final class RefreshService {
               let refresh = tokens["refresh_token"] as? String,
               let id = tokens["id_token"] as? String else { return }
 
-        guard let idx = store.accounts.firstIndex(where: { $0.accountId == accountId }) else { return }
+        let syncIndex: Int?
+        if let idx = store.accounts.firstIndex(where: { $0.accessToken == access }) {
+            syncIndex = idx
+        } else if let idx = store.accounts.firstIndex(where: { $0.isActive && $0.chatgptAccountId == accountId }) {
+            syncIndex = idx
+        } else {
+            let matches = store.accounts.indices.filter {
+                store.accounts[$0].chatgptAccountId == accountId || store.accounts[$0].accountId == accountId
+            }
+            syncIndex = matches.count == 1 ? matches[0] : nil
+        }
+
+        guard let idx = syncIndex else { return }
         var acc = store.accounts[idx]
         // 只在 token 确实变化时写，避免无谓 save
         guard acc.accessToken != access || acc.refreshToken != refresh else { return }

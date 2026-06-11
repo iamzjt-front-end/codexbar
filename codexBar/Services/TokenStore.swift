@@ -88,6 +88,8 @@ class TokenStore: ObservableObject {
 
     /// 将指定账号写入 ~/.codex/auth.json，激活为当前 Codex 使用账号
     func activate(_ account: TokenAccount) throws {
+        // 守护：空 id_token 会让 Codex 报 "invalid ID token format" 并要求重登，绝不写入
+        guard !account.idToken.isEmpty else { throw TokenStoreError.missingIdToken }
         let authDict = buildAuthJSON(account)
         guard JSONSerialization.isValidJSONObject(authDict),
               let data = try? JSONSerialization.data(withJSONObject: authDict, options: [.prettyPrinted, .sortedKeys]) else {
@@ -108,11 +110,31 @@ class TokenStore: ObservableObject {
     func markActiveAccount() {
         guard let data = try? Data(contentsOf: authURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tokens = json["tokens"] as? [String: Any],
-              let accountId = tokens["account_id"] as? String else { return }
+              let tokens = json["tokens"] as? [String: Any] else { return }
+        // 用 access_token 精确匹配激活账号：team workspace 多成员共享 chatgpt_account_id，
+        // 仅靠 account_id 无法区分是哪个成员，access_token 才能定位到具体成员。
+        let activeAccess = tokens["access_token"] as? String
+        let activeAcctId = tokens["account_id"] as? String
 
+        let activeIndex: Int?
+        if let activeAccess, !activeAccess.isEmpty,
+           let idx = accounts.firstIndex(where: { $0.accessToken == activeAccess }) {
+            activeIndex = idx
+        } else if let activeAcctId, !activeAcctId.isEmpty,
+                  let idx = accounts.firstIndex(where: { $0.isActive && $0.chatgptAccountId == activeAcctId }) {
+            activeIndex = idx
+        } else if let activeAcctId, !activeAcctId.isEmpty {
+            let matches = accounts.indices.filter {
+                accounts[$0].chatgptAccountId == activeAcctId || accounts[$0].accountId == activeAcctId
+            }
+            activeIndex = matches.count == 1 ? matches[0] : nil
+        } else {
+            activeIndex = nil
+        }
+
+        guard let activeIndex else { return }
         for idx in accounts.indices {
-            accounts[idx].isActive = (accounts[idx].accountId == accountId)
+            accounts[idx].isActive = idx == activeIndex
         }
         save()
     }
@@ -122,7 +144,7 @@ class TokenStore: ObservableObject {
             "access_token": account.accessToken,
             "refresh_token": account.refreshToken,
             "id_token": account.idToken,
-            "account_id": account.accountId,
+            "account_id": account.chatgptAccountId,
         ]
         return [
             "auth_mode": "chatgpt",
@@ -135,5 +157,11 @@ class TokenStore: ObservableObject {
 
 enum TokenStoreError: LocalizedError {
     case encodingFailed
-    var errorDescription: String? { "写入 auth.json 失败" }
+    case missingIdToken
+    var errorDescription: String? {
+        switch self {
+        case .encodingFailed: return "写入 auth.json 失败"
+        case .missingIdToken: return "账号缺少 id_token，无法激活"
+        }
+    }
 }

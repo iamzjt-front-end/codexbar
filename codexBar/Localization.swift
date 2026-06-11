@@ -134,6 +134,10 @@ enum L {
         zh ? "额度口径：\(detail)" : "Quota metric: \(detail)"
     }
     static var addAccount: String      { zh ? "添加账号"            : "Add Account" }
+    static var importAccount: String   { zh ? "导入账号 JSON"       : "Import Accounts JSON" }
+    static func importedCount(_ n: Int) -> String {
+        zh ? "已导入 \(n) 个账号" : "Imported \(n) account(s)"
+    }
     static var quit: String            { zh ? "退出"               : "Quit" }
     static var switchAccount: String    { zh ? "切换账号"            : "Switch Account" }
     static var switchTitle: String     { zh ? "切换账号"            : "Switch Account" }
@@ -147,6 +151,19 @@ enum L {
         zh
             ? "切换账号需要关闭并重新打开 Codex.app 才能生效。是否继续？"
             : "Switching account requires quitting and reopening Codex.app to take effect. Continue?"
+    }
+    static var switchModeTitle: String {
+        zh ? "选择切换方式" : "Choose How to Switch"
+    }
+    static var switchModeInfo: String {
+        zh
+            ? "「仅切换」只写入账号，不退出 Codex（不中断任务，但需 Codex 下次重新读取才生效）。\n「切换并重启」会强制退出并重开 Codex 立即生效（会中断进行中的任务）。"
+            : "\"Switch Only\" writes the account without quitting Codex (no task interruption, but takes effect only when Codex re-reads auth).\n\"Switch & Restart\" force-quits and reopens Codex for immediate effect (interrupts running tasks)."
+    }
+    static var switchOnly: String      { zh ? "仅切换（不退出）" : "Switch Only" }
+    static var switchAndRestart: String { zh ? "切换并重启 Codex" : "Switch & Restart" }
+    static var cannotActivateNoIdToken: String {
+        zh ? "该账号缺少 id_token 且无法续期，请重新授权后再激活" : "This account has no id_token and could not refresh; re-authorize before activating"
     }
     static var forceQuitAndReopen: String { zh ? "强制退出并重新打开" : "Force Quit & Reopen" }
     static var forceQuitOnly: String    { zh ? "仅强制退出" : "Force Quit Only" }

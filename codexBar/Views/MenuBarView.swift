@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 import UserNotifications
+import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @EnvironmentObject var store: TokenStore
@@ -254,6 +255,16 @@ struct MenuBarView: View {
                 .help(L.addAccount)
 
                 Button {
+                    importAccounts()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .focusable(false)
+                .help(L.importAccount)
+
+                Button {
                     refreshFrequency.cycle()
                     lastVisibleRefresh = .distantPast
                 } label: {
@@ -342,6 +353,26 @@ struct MenuBarView: View {
     }
 
     private func activateAccount(_ account: TokenAccount) {
+        // team/SSO 账号导入时常无 id_token。直接激活会写空 id_token 到 auth.json，
+        // Codex 报 "invalid ID token format"。先用 refresh_token 补一个 id_token 再激活。
+        if account.idToken.isEmpty && !account.refreshToken.isEmpty {
+            Task {
+                _ = await RefreshService.shared.refreshAndPersist(account, store: store)
+                await MainActor.run {
+                    if let updated = store.accounts.first(where: { $0.accountId == account.accountId }),
+                       !updated.idToken.isEmpty {
+                        performActivate(updated)
+                    } else {
+                        showError = L.cannotActivateNoIdToken
+                    }
+                }
+            }
+            return
+        }
+        performActivate(account)
+    }
+
+    private func performActivate(_ account: TokenAccount) {
         let running = NSWorkspace.shared.runningApplications.filter {
             $0.bundleIdentifier == "com.openai.codex"
         }
@@ -353,13 +384,17 @@ struct MenuBarView: View {
             return
         }
 
-        // Codex 在跑：问一下用户是否要切换（切换必须重启 Codex 才生效）
+        // Codex 在跑：给两种切换方式
+        // - 仅切换：只写 auth.json，不退 Codex（不中断任务；Codex 下次重读 auth 才生效）
+        // - 切换并重启：写 auth.json + 强退重开 Codex（立即生效，但中断进行中的任务）
         let alert = NSAlert()
-        alert.messageText = L.restartCodexTitle
-        alert.informativeText = L.restartCodexInfo
-        alert.addButton(withTitle: L.continueRestart)
-        alert.addButton(withTitle: L.cancel)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        alert.messageText = L.switchModeTitle
+        alert.informativeText = L.switchModeInfo
+        alert.addButton(withTitle: L.switchOnly)         // .alertFirstButtonReturn
+        alert.addButton(withTitle: L.switchAndRestart)   // .alertSecondButtonReturn
+        alert.addButton(withTitle: L.cancel)             // .alertThirdButtonReturn
+        let resp = alert.runModal()
+        guard resp != .alertThirdButtonReturn else { return }
 
         do {
             try store.activate(account)
@@ -367,7 +402,9 @@ struct MenuBarView: View {
             showError = error.localizedDescription
             return
         }
-        forceQuitCodex(running, reopen: true)
+        if resp == .alertSecondButtonReturn {
+            forceQuitCodex(running, reopen: true)
+        }
     }
 
     private func installCodexHooks() {
@@ -444,6 +481,29 @@ struct MenuBarView: View {
         await radarRefresh
         lastVisibleRefresh = Date()
         TokenStatsService.shared.refresh()
+    }
+
+    private func importAccounts() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = L.importAccount
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url) else { return }
+        do {
+            let accounts = try AccountImporter.parse(data)
+            for acc in accounts { store.addOrUpdate(acc) }
+            showSuccess = L.importedCount(accounts.count)
+            let imported = accounts
+            Task {
+                for acc in imported {
+                    await WhamService.shared.refreshOne(account: acc, store: store)
+                }
+            }
+        } catch {
+            showError = error.localizedDescription
+        }
     }
 
     private func refreshAccount(_ account: TokenAccount) async {
