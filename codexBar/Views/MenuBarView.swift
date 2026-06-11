@@ -8,6 +8,7 @@ struct MenuBarView: View {
     @EnvironmentObject var oauth: OAuthManager
     @EnvironmentObject var language: LanguageSettings
     @EnvironmentObject var refreshFrequency: RefreshFrequencySettings
+    @EnvironmentObject var quotaDisplay: QuotaDisplaySettings
     @EnvironmentObject var codexHookInstaller: CodexHookInstallerService
     @State private var isRefreshing = false
     @State private var showError: String?
@@ -115,6 +116,10 @@ struct MenuBarView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+
+            Divider()
+
+            CodexRadarView()
 
             Divider()
 
@@ -262,6 +267,26 @@ struct MenuBarView: View {
                 .buttonStyle(.borderless)
                 .focusable(false)
                 .help(refreshFrequency.helpText)
+
+                Button {
+                    quotaDisplay.toggleAmountMode()
+                } label: {
+                    Text(quotaDisplay.amountMode.shortLabel)
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+                .focusable(false)
+                .help(quotaDisplay.amountHelpText)
+
+                Button {
+                    quotaDisplay.toggle()
+                } label: {
+                    Text(quotaDisplay.mode.shortLabel)
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+                .focusable(false)
+                .help(quotaDisplay.displayHelpText)
 
                 Button {
                     language.cycle()
@@ -413,8 +438,10 @@ struct MenuBarView: View {
             refreshingAccounts.subtract(accountIDs)
         }
 
+        async let radarRefresh: Void = CodexRadarService.shared.refresh()
         await RefreshService.shared.refreshExpiring(store: store)
         await WhamService.shared.refreshAll(store: store)
+        await radarRefresh
         lastVisibleRefresh = Date()
         TokenStatsService.shared.refresh()
     }

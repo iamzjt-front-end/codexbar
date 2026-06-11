@@ -119,6 +119,20 @@ enum L {
     static func refreshFrequencyHelp(_ detail: String) -> String {
         zh ? "额度刷新频率：\(detail)" : "Quota refresh frequency: \(detail)"
     }
+    static var quotaDisplayNumbers: String { zh ? "数字" : "Numbers" }
+    static var quotaDisplayBars: String { zh ? "进度条" : "Bars" }
+    static var quotaDisplayNumbersShort: String { zh ? "数字" : "123" }
+    static var quotaDisplayBarsShort: String { zh ? "进度" : "Bars" }
+    static func quotaDisplayModeHelp(_ detail: String) -> String {
+        zh ? "顶部额度展示：\(detail)" : "Menu bar quota display: \(detail)"
+    }
+    static var quotaAmountUsed: String { zh ? "已用额度" : "Used quota" }
+    static var quotaAmountRemaining: String { zh ? "剩余额度" : "Remaining quota" }
+    static var quotaAmountUsedShort: String { zh ? "已用" : "Used" }
+    static var quotaAmountRemainingShort: String { zh ? "剩余" : "Left" }
+    static func quotaAmountModeHelp(_ detail: String) -> String {
+        zh ? "额度口径：\(detail)" : "Quota metric: \(detail)"
+    }
     static var addAccount: String      { zh ? "添加账号"            : "Add Account" }
     static var quit: String            { zh ? "退出"               : "Quit" }
     static var switchAccount: String    { zh ? "切换账号"            : "Switch Account" }
@@ -199,6 +213,15 @@ enum L {
 
     // MARK: - Reset countdown
     static var resetSoon: String { zh ? "即将重置" : "Resetting soon" }
+    static func resetAt(_ time: String) -> String {
+        zh ? "\(time) 重置" : "Resets at \(time)"
+    }
+    static func resetTomorrowAt(_ time: String) -> String {
+        zh ? "明天 \(time) 重置" : "Resets tomorrow at \(time)"
+    }
+    static func resetAtDate(_ dateTime: String) -> String {
+        zh ? "\(dateTime) 重置" : "Resets \(dateTime)"
+    }
     static func resetInMin(_ m: Int) -> String {
         zh ? "\(m) 分钟后重置" : "Resets in \(m) min"
     }

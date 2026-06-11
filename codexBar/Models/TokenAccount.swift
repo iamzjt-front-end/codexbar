@@ -97,12 +97,12 @@ struct TokenAccount: Codable, Identifiable {
         return .ok
     }
 
-    /// 5h 窗口重置倒计时文字
+    /// 5h 窗口重置时间点文字
     var primaryResetDescription: String {
         resetLabel(from: primaryResetAt)
     }
 
-    /// 周窗口重置倒计时文字
+    /// 周窗口重置时间点文字
     var secondaryResetDescription: String {
         resetLabel(from: secondaryResetAt)
     }
@@ -111,13 +111,32 @@ struct TokenAccount: Codable, Identifiable {
         guard let date = date else { return "" }
         let remaining = date.timeIntervalSinceNow
         guard remaining > 0 else { return L.resetSoon }
-        let seconds = Int(remaining)
-        let days = seconds / 86400
-        let hours = (seconds % 86400) / 3600
-        let minutes = (seconds % 3600) / 60
-        if days > 0 { return L.resetInDay(days, hours) }
-        if hours > 0 { return L.resetInHr(hours, minutes) }
-        return L.resetInMin(minutes)
+
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return L.resetAt(formattedTime(date))
+        }
+        if calendar.isDateInTomorrow(date) {
+            return L.resetTomorrowAt(formattedTime(date))
+        }
+        return L.resetAtDate(formattedDateTime(date))
+    }
+
+    private func formattedTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func formattedDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
+        let calendar = Calendar.current
+        formatter.dateFormat = calendar.isDate(date, equalTo: Date(), toGranularity: .year)
+            ? "M/d HH:mm"
+            : "yyyy/M/d HH:mm"
+        return formatter.string(from: date)
     }
 }
 

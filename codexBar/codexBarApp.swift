@@ -9,6 +9,7 @@ struct codexBarApp: App {
     @StateObject private var oauth = OAuthManager.shared
     @StateObject private var language = LanguageSettings.shared
     @StateObject private var refreshFrequency = RefreshFrequencySettings.shared
+    @StateObject private var quotaDisplay = QuotaDisplaySettings.shared
     @StateObject private var codexSessionStatus = CodexSessionStatusService.shared
     @StateObject private var codexHookInstaller = CodexHookInstallerService.shared
 
@@ -17,11 +18,13 @@ struct codexBarApp: App {
         BackgroundRefresher.shared.start(interval: RefreshFrequencySettings.shared.selection.backgroundInterval)
         CodexSessionStatusService.shared.start()
         CodexHookInstallerService.shared.start()
+        CodexRadarService.shared.start()
         AppStatusBarController.shared.start(
             store: TokenStore.shared,
             oauth: OAuthManager.shared,
             language: LanguageSettings.shared,
             refreshFrequency: RefreshFrequencySettings.shared,
+            quotaDisplay: QuotaDisplaySettings.shared,
             codexSessionStatus: CodexSessionStatusService.shared,
             codexHookInstaller: CodexHookInstallerService.shared
         )
@@ -48,6 +51,7 @@ private final class AppStatusBarController: NSObject {
     private weak var oauth: OAuthManager?
     private weak var language: LanguageSettings?
     private weak var refreshFrequency: RefreshFrequencySettings?
+    private weak var quotaDisplay: QuotaDisplaySettings?
     private weak var codexSessionStatus: CodexSessionStatusService?
     private weak var codexHookInstaller: CodexHookInstallerService?
 
@@ -56,6 +60,7 @@ private final class AppStatusBarController: NSObject {
         oauth: OAuthManager,
         language: LanguageSettings,
         refreshFrequency: RefreshFrequencySettings,
+        quotaDisplay: QuotaDisplaySettings,
         codexSessionStatus: CodexSessionStatusService,
         codexHookInstaller: CodexHookInstallerService
     ) {
@@ -67,6 +72,7 @@ private final class AppStatusBarController: NSObject {
         self.oauth = oauth
         self.language = language
         self.refreshFrequency = refreshFrequency
+        self.quotaDisplay = quotaDisplay
         self.codexSessionStatus = codexSessionStatus
         self.codexHookInstaller = codexHookInstaller
 
@@ -97,7 +103,7 @@ private final class AppStatusBarController: NSObject {
     }
 
     private func installObservers() {
-        guard let store, let language, let codexSessionStatus, let codexHookInstaller else { return }
+        guard let store, let language, let quotaDisplay, let codexSessionStatus, let codexHookInstaller else { return }
 
         store.$accounts
             .receive(on: RunLoop.main)
@@ -105,6 +111,16 @@ private final class AppStatusBarController: NSObject {
             .store(in: &cancellables)
 
         language.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
+
+        quotaDisplay.$mode
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
+
+        quotaDisplay.$amountMode
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
@@ -132,11 +148,12 @@ private final class AppStatusBarController: NSObject {
         guard let button = statusItem?.button,
               let capsuleView,
               let store,
+              let quotaDisplay,
               let codexSessionStatus,
               let codexHookInstaller else { return }
-        let quotaLabel = Self.quotaLabel(from: store)
+        let quotaState = Self.quotaState(from: store, amountMode: quotaDisplay.amountMode)
         let iconName = Self.iconName(from: store)
-        let width = StatusBarCapsuleView.width(for: quotaLabel)
+        let width = StatusBarCapsuleView.width(for: quotaState, mode: quotaDisplay.mode)
         let light: CodexSessionLight = codexHookInstaller.state.needsAction ? .offline : codexSessionStatus.status.light
 
         if abs(lastStatusItemWidth - width) > 0.5 {
@@ -145,7 +162,7 @@ private final class AppStatusBarController: NSObject {
         }
 
         capsuleView.frame = button.bounds
-        capsuleView.configure(iconName: iconName, quotaLabel: quotaLabel, light: light)
+        capsuleView.configure(iconName: iconName, quotaState: quotaState, mode: quotaDisplay.mode, light: light)
         button.toolTip = codexHookInstaller.state.needsAction ? L.codexHookTooltipNeedsInstall : codexSessionStatus.helpText
     }
 
@@ -155,6 +172,7 @@ private final class AppStatusBarController: NSObject {
               let oauth,
               let language,
               let refreshFrequency,
+              let quotaDisplay,
               let codexSessionStatus,
               let codexHookInstaller else { return }
 
@@ -168,6 +186,7 @@ private final class AppStatusBarController: NSObject {
                 .environmentObject(oauth)
                 .environmentObject(language)
                 .environmentObject(refreshFrequency)
+                .environmentObject(quotaDisplay)
                 .environmentObject(codexSessionStatus)
                 .environmentObject(codexHookInstaller)
         )
@@ -175,11 +194,28 @@ private final class AppStatusBarController: NSObject {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
-    private static func quotaLabel(from store: TokenStore) -> String {
+    private static func quotaState(from store: TokenStore, amountMode: QuotaAmountMode) -> StatusBarQuotaState {
         guard let active = store.accounts.first(where: { $0.isActive }) else {
-            return "--·--"
+            return StatusBarQuotaState.empty
         }
-        return "\(Int(active.primaryUsedPercent))%·\(Int(active.secondaryUsedPercent))%"
+        let primaryDisplayPercent = Self.displayPercent(forUsedPercent: active.primaryUsedPercent, amountMode: amountMode)
+        let secondaryDisplayPercent = Self.displayPercent(forUsedPercent: active.secondaryUsedPercent, amountMode: amountMode)
+        return StatusBarQuotaState(
+            text: "\(Int(primaryDisplayPercent))%·\(Int(secondaryDisplayPercent))%",
+            primaryDisplayPercent: primaryDisplayPercent,
+            secondaryDisplayPercent: secondaryDisplayPercent,
+            primaryUsedPercent: active.primaryUsedPercent,
+            secondaryUsedPercent: active.secondaryUsedPercent
+        )
+    }
+
+    private static func displayPercent(forUsedPercent usedPercent: Double, amountMode: QuotaAmountMode) -> Double {
+        switch amountMode {
+        case .used:
+            return min(max(usedPercent, 0), 100)
+        case .remaining:
+            return min(max(100 - usedPercent, 0), 100)
+        }
     }
 
     private static func iconName(from store: TokenStore) -> String {
@@ -199,6 +235,26 @@ private final class AppStatusBarController: NSObject {
             return "bolt.circle.fill"
         }
         return "terminal.fill"
+    }
+}
+
+private struct StatusBarQuotaState {
+    let text: String
+    let primaryDisplayPercent: Double?
+    let secondaryDisplayPercent: Double?
+    let primaryUsedPercent: Double?
+    let secondaryUsedPercent: Double?
+
+    static let empty = StatusBarQuotaState(
+        text: "--·--",
+        primaryDisplayPercent: nil,
+        secondaryDisplayPercent: nil,
+        primaryUsedPercent: nil,
+        secondaryUsedPercent: nil
+    )
+
+    var hasBars: Bool {
+        primaryDisplayPercent != nil && secondaryDisplayPercent != nil
     }
 }
 
@@ -234,6 +290,7 @@ private final class StatusBarCapsuleView: NSView {
     private static let rightPadding: CGFloat = 2
     private static let iconSize: CGFloat = 16
     private static let textGap: CGFloat = 3
+    private static let barsGap: CGFloat = 4
     private static let lightGap: CGFloat = 7
     private static let textRenderPadding: CGFloat = 4
     private static let dotSize: CGFloat = 8.4
@@ -247,7 +304,10 @@ private final class StatusBarCapsuleView: NSView {
 
     private let iconView = NSImageView()
     private let textField = NSTextField(labelWithString: "")
+    private let barsView = StatusQuotaBarsView()
     private let lightsView = StatusTrafficLightsView(dotSize: dotSize, dotGap: dotGap)
+    private var quotaState = StatusBarQuotaState.empty
+    private var quotaMode: QuotaDisplayMode = .numbers
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -263,16 +323,25 @@ private final class StatusBarCapsuleView: NSView {
         nil
     }
 
-    static func width(for quotaLabel: String) -> CGFloat {
-        let textWidth = measuredTextWidth(for: quotaLabel)
-        return leftPadding + iconSize + textGap + textWidth + lightGap + lightsWidth + rightPadding
+    static func width(for quotaState: StatusBarQuotaState, mode: QuotaDisplayMode) -> CGFloat {
+        let contentWidth = contentWidth(for: quotaState, mode: mode)
+        let contentGap = mode == .bars && quotaState.hasBars ? barsGap : textGap
+        return leftPadding + iconSize + contentGap + contentWidth + lightGap + lightsWidth + rightPadding
     }
 
-    func configure(iconName: String, quotaLabel: String, light: CodexSessionLight) {
+    func configure(iconName: String, quotaState: StatusBarQuotaState, mode: QuotaDisplayMode, light: CodexSessionLight) {
         iconView.image = Self.statusIcon(systemName: iconName)
-        if textField.stringValue != quotaLabel {
-            textField.stringValue = quotaLabel
+        self.quotaState = quotaState
+        quotaMode = mode
+        if textField.stringValue != quotaState.text {
+            textField.stringValue = quotaState.text
         }
+        barsView.configure(
+            primaryDisplayPercent: quotaState.primaryDisplayPercent ?? 0,
+            secondaryDisplayPercent: quotaState.secondaryDisplayPercent ?? 0,
+            primaryUsedPercent: quotaState.primaryUsedPercent ?? 0,
+            secondaryUsedPercent: quotaState.secondaryUsedPercent ?? 0
+        )
         lightsView.configure(light: light)
         needsLayout = true
     }
@@ -281,7 +350,9 @@ private final class StatusBarCapsuleView: NSView {
         super.layout()
 
         let textSize = (textField.stringValue as NSString).size(withAttributes: Self.textAttributes)
-        let textWidth = Self.measuredTextWidth(for: textField.stringValue)
+        let useBars = quotaMode == .bars && quotaState.hasBars
+        let contentGap = useBars ? Self.barsGap : Self.textGap
+        let contentWidth = Self.contentWidth(for: quotaState, mode: quotaMode)
         let iconRect = NSRect(
             x: Self.leftPadding,
             y: (bounds.height - Self.iconSize) / 2,
@@ -290,15 +361,29 @@ private final class StatusBarCapsuleView: NSView {
         )
         iconView.frame = iconRect
 
-        textField.frame = NSRect(
-            x: iconRect.maxX + Self.textGap,
-            y: (bounds.height - textSize.height) / 2 - 0.3,
-            width: textWidth,
-            height: textSize.height + 1
-        )
+        let contentX = iconRect.maxX + contentGap
+        if useBars {
+            textField.isHidden = true
+            barsView.isHidden = false
+            barsView.frame = NSRect(
+                x: contentX,
+                y: 0,
+                width: contentWidth,
+                height: bounds.height
+            )
+        } else {
+            barsView.isHidden = true
+            textField.isHidden = false
+            textField.frame = NSRect(
+                x: contentX,
+                y: (bounds.height - textSize.height) / 2 - 0.3,
+                width: contentWidth,
+                height: textSize.height + 1
+            )
+        }
 
         lightsView.frame = NSRect(
-            x: textField.frame.minX + textWidth + Self.lightGap,
+            x: contentX + contentWidth + Self.lightGap,
             y: 0,
             width: Self.lightsWidth,
             height: bounds.height
@@ -323,8 +408,19 @@ private final class StatusBarCapsuleView: NSView {
         textField.translatesAutoresizingMaskIntoConstraints = true
         addSubview(textField)
 
+        barsView.translatesAutoresizingMaskIntoConstraints = true
+        barsView.isHidden = true
+        addSubview(barsView)
+
         lightsView.translatesAutoresizingMaskIntoConstraints = true
         addSubview(lightsView)
+    }
+
+    private static func contentWidth(for quotaState: StatusBarQuotaState, mode: QuotaDisplayMode) -> CGFloat {
+        if mode == .bars && quotaState.hasBars {
+            return StatusQuotaBarsView.preferredWidth
+        }
+        return measuredTextWidth(for: quotaState.text)
     }
 
     private static func measuredTextWidth(for text: String) -> CGFloat {
@@ -336,6 +432,246 @@ private final class StatusBarCapsuleView: NSView {
             .applying(NSImage.SymbolConfiguration(hierarchicalColor: NSColor.white.withAlphaComponent(0.93)))
         return NSImage(systemSymbolName: systemName, accessibilityDescription: nil)?
             .withSymbolConfiguration(configuration)
+    }
+}
+
+private final class StatusQuotaBarsView: NSView {
+    static let preferredWidth: CGFloat = 58
+
+    private static let labelWidth: CGFloat = 13
+    private static let trackHeight: CGFloat = 3.2
+    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 7.5, weight: .medium)
+    private static let rowCenterGap: CGFloat = 7.4
+    private static let labelTextYOffset: CGFloat = -0.2
+    private static let fillAnimationKey = "codexbar.quotaFill"
+    private static let fillAnimationDuration: CFTimeInterval = 0.38
+
+    private let primaryFillLayer = CAShapeLayer()
+    private let secondaryFillLayer = CAShapeLayer()
+    private var primaryDisplayPercent: Double = 0
+    private var secondaryDisplayPercent: Double = 0
+    private var primaryUsedPercent: Double = 0
+    private var secondaryUsedPercent: Double = 0
+    private var hasLaidOutFillLayers = false
+    private var lastFillBounds: NSRect = .zero
+
+    override var isFlipped: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupFillLayers()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupFillLayers()
+    }
+
+    func configure(
+        primaryDisplayPercent: Double,
+        secondaryDisplayPercent: Double,
+        primaryUsedPercent: Double,
+        secondaryUsedPercent: Double
+    ) {
+        let nextPrimaryDisplay = Self.clamped(primaryDisplayPercent)
+        let nextSecondaryDisplay = Self.clamped(secondaryDisplayPercent)
+        let nextPrimaryUsed = Self.clamped(primaryUsedPercent)
+        let nextSecondaryUsed = Self.clamped(secondaryUsedPercent)
+        let displayChanged = self.primaryDisplayPercent != nextPrimaryDisplay ||
+            self.secondaryDisplayPercent != nextSecondaryDisplay
+        guard self.primaryDisplayPercent != nextPrimaryDisplay ||
+            self.secondaryDisplayPercent != nextSecondaryDisplay ||
+            self.primaryUsedPercent != nextPrimaryUsed ||
+            self.secondaryUsedPercent != nextSecondaryUsed else { return }
+        let primaryFromPath = primaryFillLayer.presentation()?.path ?? primaryFillLayer.path
+        let secondaryFromPath = secondaryFillLayer.presentation()?.path ?? secondaryFillLayer.path
+        self.primaryDisplayPercent = nextPrimaryDisplay
+        self.secondaryDisplayPercent = nextSecondaryDisplay
+        self.primaryUsedPercent = nextPrimaryUsed
+        self.secondaryUsedPercent = nextSecondaryUsed
+        updateFillLayers(
+            animated: displayChanged && hasLaidOutFillLayers && window != nil && !isHidden,
+            primaryFromPath: primaryFromPath,
+            secondaryFromPath: secondaryFromPath
+        )
+        needsDisplay = true
+    }
+
+    override func layout() {
+        super.layout()
+        if !hasLaidOutFillLayers || !NSEqualRects(lastFillBounds, bounds) {
+            updateFillLayers(animated: false)
+            lastFillBounds = bounds
+        }
+        hasLaidOutFillLayers = true
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let rowOffset = Self.rowCenterGap / 2
+        drawRow(
+            label: "5h",
+            centerY: bounds.midY + rowOffset
+        )
+        drawRow(
+            label: "7d",
+            centerY: bounds.midY - rowOffset
+        )
+    }
+
+    private func drawRow(label: String, centerY: CGFloat) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .right
+        let labelAttributes: [NSAttributedString.Key: Any] = [
+            .font: Self.labelFont,
+            .foregroundColor: NSColor.white.withAlphaComponent(0.76),
+            .paragraphStyle: paragraph
+        ]
+        let labelSize = (label as NSString).size(withAttributes: labelAttributes)
+        let labelRect = NSRect(
+            x: 0,
+            y: centerY - labelSize.height / 2 + Self.labelTextYOffset,
+            width: Self.labelWidth,
+            height: labelSize.height
+        )
+        (label as NSString).draw(in: labelRect, withAttributes: labelAttributes)
+
+        let trackX = Self.labelWidth + 4
+        let trackWidth = bounds.width - trackX
+        let trackRect = NSRect(
+            x: trackX,
+            y: centerY - Self.trackHeight / 2,
+            width: trackWidth,
+            height: Self.trackHeight
+        )
+        drawPill(trackRect, color: NSColor.white.withAlphaComponent(0.18))
+    }
+
+    private func setupFillLayers() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+
+        [primaryFillLayer, secondaryFillLayer].forEach { fillLayer in
+            fillLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+            fillLayer.masksToBounds = false
+            fillLayer.opacity = 0
+            fillLayer.zPosition = 1
+            layer?.addSublayer(fillLayer)
+        }
+    }
+
+    private func drawPill(_ rect: NSRect, color: NSColor) {
+        color.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+    }
+
+    private func updateFillLayers(
+        animated: Bool,
+        primaryFromPath: CGPath? = nil,
+        secondaryFromPath: CGPath? = nil
+    ) {
+        guard bounds.width > 0 else { return }
+        let rowOffset = Self.rowCenterGap / 2
+        updateFillLayer(
+            primaryFillLayer,
+            displayPercent: primaryDisplayPercent,
+            usedPercent: primaryUsedPercent,
+            centerY: bounds.midY + rowOffset,
+            animated: animated,
+            fromPath: primaryFromPath
+        )
+        updateFillLayer(
+            secondaryFillLayer,
+            displayPercent: secondaryDisplayPercent,
+            usedPercent: secondaryUsedPercent,
+            centerY: bounds.midY - rowOffset,
+            animated: animated,
+            fromPath: secondaryFromPath
+        )
+    }
+
+    private func updateFillLayer(
+        _ fillLayer: CAShapeLayer,
+        displayPercent: Double,
+        usedPercent: Double,
+        centerY: CGFloat,
+        animated: Bool,
+        fromPath: CGPath?
+    ) {
+        let newPath = fillPath(displayPercent: displayPercent, centerY: centerY)
+        let newOpacity: Float = displayPercent > 0 ? 1 : 0
+        let oldPath = fromPath ?? fillLayer.presentation()?.path ?? fillLayer.path ?? newPath
+        let oldOpacity = fillLayer.presentation()?.opacity ?? fillLayer.opacity
+
+        fillLayer.removeAnimation(forKey: Self.fillAnimationKey)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fillLayer.frame = bounds
+        fillLayer.fillColor = Self.color(forUsedPercent: usedPercent).cgColor
+        fillLayer.path = newPath
+        fillLayer.opacity = newOpacity
+        CATransaction.commit()
+
+        guard animated else { return }
+
+        let pathAnimation = CABasicAnimation(keyPath: "path")
+        pathAnimation.fromValue = oldPath
+        pathAnimation.toValue = newPath
+
+        let opacityAnimation = CABasicAnimation(keyPath: "opacity")
+        opacityAnimation.fromValue = oldOpacity
+        opacityAnimation.toValue = newOpacity
+
+        let group = CAAnimationGroup()
+        group.animations = [pathAnimation, opacityAnimation]
+        group.duration = Self.fillAnimationDuration
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        group.isRemovedOnCompletion = true
+        fillLayer.add(group, forKey: Self.fillAnimationKey)
+    }
+
+    private func fillPath(displayPercent: Double, centerY: CGFloat) -> CGPath {
+        let trackRect = self.trackRect(centerY: centerY)
+        let fillWidth: CGFloat
+        if displayPercent > 0 {
+            fillWidth = max(Self.trackHeight, trackRect.width * CGFloat(displayPercent) / 100)
+        } else {
+            fillWidth = Self.trackHeight
+        }
+        let fillRect = NSRect(
+            x: trackRect.minX,
+            y: trackRect.minY,
+            width: fillWidth,
+            height: trackRect.height
+        )
+        return CGPath(
+            roundedRect: fillRect,
+            cornerWidth: fillRect.height / 2,
+            cornerHeight: fillRect.height / 2,
+            transform: nil
+        )
+    }
+
+    private func trackRect(centerY: CGFloat) -> NSRect {
+        let trackX = Self.labelWidth + 4
+        return NSRect(
+            x: trackX,
+            y: centerY - Self.trackHeight / 2,
+            width: bounds.width - trackX,
+            height: Self.trackHeight
+        )
+    }
+
+    private static func color(forUsedPercent usedPercent: Double) -> NSColor {
+        if usedPercent >= 90 { return .systemRed }
+        if usedPercent >= 70 { return .systemOrange }
+        return .systemGreen
+    }
+
+    private static func clamped(_ percent: Double) -> Double {
+        min(max(percent, 0), 100)
     }
 }
 

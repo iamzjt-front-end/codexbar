@@ -3,6 +3,7 @@ import SwiftUI
 /// One org/account row under an email group
 struct AccountRowView: View {
     @EnvironmentObject var language: LanguageSettings
+    @EnvironmentObject var quotaDisplay: QuotaDisplaySettings
 
     let account: TokenAccount
     let isActive: Bool
@@ -15,6 +16,8 @@ struct AccountRowView: View {
 
     var body: some View {
         let _ = language.identity
+        let primaryDisplayPercent = displayPercent(forUsedPercent: account.primaryUsedPercent)
+        let secondaryDisplayPercent = displayPercent(forUsedPercent: account.secondaryUsedPercent)
 
         VStack(alignment: .leading, spacing: 4) {
             // Line 1: org name + plan badge + active mark + switch button
@@ -135,16 +138,16 @@ struct AccountRowView: View {
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text("\(Int(account.primaryUsedPercent))%")
+                            Text("\(Int(primaryDisplayPercent))%")
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(usageColor(account.primaryUsedPercent))
                                 .contentTransition(.numericText())
-                                .animation(.easeInOut(duration: 0.3), value: account.primaryUsedPercent)
+                                .animation(.easeInOut(duration: 0.3), value: primaryDisplayPercent)
                         }
-                        ProgressView(value: min(account.primaryUsedPercent / 100, 1.0))
+                        ProgressView(value: min(primaryDisplayPercent / 100, 1.0))
                             .tint(usageColor(account.primaryUsedPercent))
                             .scaleEffect(x: 1, y: 0.7)
-                            .animation(.easeInOut(duration: 0.4), value: account.primaryUsedPercent)
+                            .animation(.easeInOut(duration: 0.4), value: primaryDisplayPercent)
                     }
                     .frame(maxWidth: .infinity)
 
@@ -155,16 +158,16 @@ struct AccountRowView: View {
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text("\(Int(account.secondaryUsedPercent))%")
+                            Text("\(Int(secondaryDisplayPercent))%")
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(usageColor(account.secondaryUsedPercent))
                                 .contentTransition(.numericText())
-                                .animation(.easeInOut(duration: 0.3), value: account.secondaryUsedPercent)
+                                .animation(.easeInOut(duration: 0.3), value: secondaryDisplayPercent)
                         }
-                        ProgressView(value: min(account.secondaryUsedPercent / 100, 1.0))
+                        ProgressView(value: min(secondaryDisplayPercent / 100, 1.0))
                             .tint(usageColor(account.secondaryUsedPercent))
                             .scaleEffect(x: 1, y: 0.7)
-                            .animation(.easeInOut(duration: 0.4), value: account.secondaryUsedPercent)
+                            .animation(.easeInOut(duration: 0.4), value: secondaryDisplayPercent)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -244,5 +247,14 @@ struct AccountRowView: View {
         if percent >= 90 { return .red }
         if percent >= 70 { return .orange }
         return .green
+    }
+
+    private func displayPercent(forUsedPercent usedPercent: Double) -> Double {
+        switch quotaDisplay.amountMode {
+        case .used:
+            return min(max(usedPercent, 0), 100)
+        case .remaining:
+            return min(max(100 - usedPercent, 0), 100)
+        }
     }
 }

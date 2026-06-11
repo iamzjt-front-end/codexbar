@@ -33,9 +33,11 @@ final class CodexHookInstallerService: ObservableObject {
     @Published private(set) var lastBackupPath: String?
 
     let hooksURL: URL
-    let scriptURL: URL?
+    let scriptURL: URL
+    private let bundledScriptURL: URL?
 
     private var timer: AnyCancellable?
+    private var didAttemptAutomaticMigration = false
 
     private static let hookScriptName = "codexbar-session-status-hook.py"
     private static let hookIdentity = "codexbar-session-status-hook.py"
@@ -93,7 +95,10 @@ final class CodexHookInstallerService: ObservableObject {
             home = FileManager.default.homeDirectoryForCurrentUser
         }
         hooksURL = home.appendingPathComponent(".codex/hooks.json")
-        scriptURL = Bundle.main.url(
+        scriptURL = home
+            .appendingPathComponent(".codex/codexbar")
+            .appendingPathComponent(Self.hookScriptName)
+        bundledScriptURL = Bundle.main.url(
             forResource: Self.hookScriptName.replacingOccurrences(of: ".py", with: ""),
             withExtension: "py"
         )
@@ -110,36 +115,64 @@ final class CodexHookInstallerService: ObservableObject {
     }
 
     func refresh() {
-        guard let scriptURL else {
-            state = .error(L.codexHookScriptMissing)
-            return
-        }
-
-        guard FileManager.default.fileExists(atPath: hooksURL.path) else {
-            state = .missing
-            return
-        }
-
         do {
-            let root = try readRootObject()
-            state = installState(in: root, expectedScriptPath: scriptURL.path)
+            try syncScriptIfNeeded()
+            guard FileManager.default.fileExists(atPath: hooksURL.path) else {
+                state = .missing
+                return
+            }
+            var root = try readRootObject()
+            let currentState = installState(in: root, expectedScriptPath: scriptURL.path)
+            if currentState == .needsUpdate,
+               !didAttemptAutomaticMigration,
+               containsLegacyCodexBarHook(in: root, expectedScriptPath: scriptURL.path) {
+                didAttemptAutomaticMigration = true
+                try writeMergedRootObject(from: root, backupExisting: true)
+                root = try readRootObject()
+                state = installState(in: root, expectedScriptPath: scriptURL.path)
+                return
+            }
+            state = currentState
         } catch {
             state = .error(error.localizedDescription)
         }
     }
 
     func install() throws {
-        guard let scriptURL else {
+        try syncScriptIfNeeded()
+        let root = try readRootObjectIfPresent()
+        try writeMergedRootObject(from: root, backupExisting: true)
+        refresh()
+    }
+
+    private func syncScriptIfNeeded() throws {
+        guard let bundledScriptURL else {
             throw CodexHookInstallerError.scriptMissing
         }
 
+        let fileManager = FileManager.default
+        let bundledData = try Data(contentsOf: bundledScriptURL)
+        if fileManager.fileExists(atPath: scriptURL.path),
+           let installedData = try? Data(contentsOf: scriptURL),
+           installedData == bundledData {
+            return
+        }
+
+        try fileManager.createDirectory(
+            at: scriptURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try bundledData.write(to: scriptURL, options: .atomic)
+    }
+
+    private func writeMergedRootObject(from root: [String: Any], backupExisting: Bool) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(
             at: hooksURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
 
-        if fileManager.fileExists(atPath: hooksURL.path) {
+        if backupExisting, fileManager.fileExists(atPath: hooksURL.path) {
             let backup = backupURL()
             try fileManager.copyItem(at: hooksURL, to: backup)
             lastBackupPath = backup.path
@@ -147,11 +180,9 @@ final class CodexHookInstallerService: ObservableObject {
             lastBackupPath = nil
         }
 
-        let root = try readRootObjectIfPresent()
         let updated = try mergedRootObject(root, scriptURL: scriptURL)
         let data = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: hooksURL, options: .atomic)
-        refresh()
     }
 
     private func installState(in root: [String: Any], expectedScriptPath: String) -> CodexHookInstallState {
@@ -180,6 +211,16 @@ final class CodexHookInstallerService: ObservableObject {
             return .installed
         }
         return hasAnyCodexBarHook ? .needsUpdate : .missing
+    }
+
+    private func containsLegacyCodexBarHook(in root: [String: Any], expectedScriptPath: String) -> Bool {
+        guard let hooks = root["hooks"] as? [String: Any] else {
+            return false
+        }
+
+        return hooks.values.contains { value in
+            containsLegacyCodexBarHook(in: value, expectedScriptPath: expectedScriptPath)
+        }
     }
 
     private func mergedRootObject(_ root: [String: Any], scriptURL: URL) throws -> [String: Any] {
@@ -252,6 +293,19 @@ final class CodexHookInstallerService: ObservableObject {
                 return hookItems.contains { hook in
                     guard let command = hook["command"] as? String else { return false }
                     return command.contains(Self.hookIdentity)
+                }
+            }
+        }
+        return false
+    }
+
+    private func containsLegacyCodexBarHook(in value: Any, expectedScriptPath: String) -> Bool {
+        if let entries = value as? [[String: Any]] {
+            return entries.contains { entry in
+                guard let hookItems = entry["hooks"] as? [[String: Any]] else { return false }
+                return hookItems.contains { hook in
+                    guard let command = hook["command"] as? String else { return false }
+                    return command.contains(Self.hookIdentity) && !command.contains(expectedScriptPath)
                 }
             }
         }
