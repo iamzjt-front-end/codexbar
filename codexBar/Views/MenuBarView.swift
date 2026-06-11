@@ -223,14 +223,39 @@ struct MenuBarView: View {
                 TokenStatsView()
             }
 
+            if !store.accounts.isEmpty {
+                Divider()
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Text(L.alwaysShowResetTime)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button {
+                        quotaDisplay.setAlwaysShowResetTime(!quotaDisplay.alwaysShowResetTime)
+                    } label: {
+                        ResetTimeSwitch(isOn: quotaDisplay.alwaysShowResetTime)
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .help(quotaDisplay.resetTimeHelpText)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+
             Divider()
 
             // 底部操作栏
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 if let lastUpdate = store.accounts.compactMap({ $0.lastChecked }).max() {
                     Text(relativeTime(lastUpdate))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .frame(height: 18, alignment: .center)
                 }
 
                 Spacer()
@@ -249,6 +274,7 @@ struct MenuBarView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12))
+                        .frame(width: 18, height: 18, alignment: .center)
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
@@ -257,8 +283,9 @@ struct MenuBarView: View {
                 Button {
                     importAccounts()
                 } label: {
-                    Image(systemName: "square.and.arrow.down")
+                    Image(systemName: "doc.badge.plus")
                         .font(.system(size: 12))
+                        .frame(width: 18, height: 18, alignment: .center)
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
@@ -268,12 +295,13 @@ struct MenuBarView: View {
                     refreshFrequency.cycle()
                     lastVisibleRefresh = .distantPast
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(alignment: .center, spacing: 2) {
                         Image(systemName: "timer")
                             .font(.system(size: 11))
                         Text(refreshFrequency.buttonLabel)
                             .font(.system(size: 10, weight: .medium))
                     }
+                    .frame(height: 18, alignment: .center)
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
@@ -284,6 +312,7 @@ struct MenuBarView: View {
                 } label: {
                     Text(quotaDisplay.amountMode.shortLabel)
                         .font(.system(size: 10, weight: .medium))
+                        .frame(height: 18, alignment: .center)
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
@@ -294,6 +323,7 @@ struct MenuBarView: View {
                 } label: {
                     Text(quotaDisplay.mode.shortLabel)
                         .font(.system(size: 10, weight: .medium))
+                        .frame(height: 18, alignment: .center)
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
@@ -304,6 +334,7 @@ struct MenuBarView: View {
                 } label: {
                     Text(language.buttonLabel)
                         .font(.system(size: 10, weight: .medium))
+                        .frame(height: 18, alignment: .center)
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
@@ -314,6 +345,7 @@ struct MenuBarView: View {
                 } label: {
                     Image(systemName: "power")
                         .font(.system(size: 12))
+                        .frame(width: 18, height: 18, alignment: .center)
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
@@ -548,6 +580,26 @@ struct MenuBarView: View {
                 showError = error.localizedDescription
             }
         }
+    }
+}
+
+private struct ResetTimeSwitch: View {
+    let isOn: Bool
+
+    var body: some View {
+        Capsule()
+            .fill(isOn ? Color.accentColor : Color.secondary.opacity(0.22))
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle()
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.16), radius: 1.5, x: 0, y: 0.8)
+                    .padding(2)
+            }
+            .frame(width: 36, height: 20)
+            .contentShape(Capsule())
+            .animation(.easeInOut(duration: 0.16), value: isOn)
+            .accessibilityLabel(L.alwaysShowResetTime)
+            .accessibilityValue(isOn ? L.resetTimeDisplayAlways : L.resetTimeDisplayNearLimit)
     }
 }
 

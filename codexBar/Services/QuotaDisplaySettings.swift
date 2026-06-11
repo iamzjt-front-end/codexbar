@@ -49,9 +49,11 @@ final class QuotaDisplaySettings: ObservableObject {
 
     @Published private(set) var mode: QuotaDisplayMode
     @Published private(set) var amountMode: QuotaAmountMode
+    @Published private(set) var alwaysShowResetTime: Bool
 
     private let modeDefaultsKey = "quotaDisplayMode"
     private let amountDefaultsKey = "quotaAmountMode"
+    private let alwaysShowResetTimeDefaultsKey = "quotaAlwaysShowResetTime"
 
     private init() {
         let initialMode: QuotaDisplayMode
@@ -74,6 +76,12 @@ final class QuotaDisplaySettings: ObservableObject {
 
         mode = initialMode
         amountMode = initialAmountMode
+        if UserDefaults.standard.object(forKey: alwaysShowResetTimeDefaultsKey) == nil {
+            alwaysShowResetTime = true
+            UserDefaults.standard.set(alwaysShowResetTime, forKey: alwaysShowResetTimeDefaultsKey)
+        } else {
+            alwaysShowResetTime = UserDefaults.standard.bool(forKey: alwaysShowResetTimeDefaultsKey)
+        }
     }
 
     var displayHelpText: String {
@@ -82,6 +90,10 @@ final class QuotaDisplaySettings: ObservableObject {
 
     var amountHelpText: String {
         L.quotaAmountModeHelp(amountMode.label)
+    }
+
+    var resetTimeHelpText: String {
+        L.resetTimeDisplayHelp(alwaysShowResetTime ? L.resetTimeDisplayAlways : L.resetTimeDisplayNearLimit)
     }
 
     func setMode(_ newMode: QuotaDisplayMode) {
@@ -102,5 +114,11 @@ final class QuotaDisplaySettings: ObservableObject {
 
     func toggleAmountMode() {
         setAmountMode(amountMode == .used ? .remaining : .used)
+    }
+
+    func setAlwaysShowResetTime(_ enabled: Bool) {
+        guard alwaysShowResetTime != enabled else { return }
+        alwaysShowResetTime = enabled
+        UserDefaults.standard.set(enabled, forKey: alwaysShowResetTimeDefaultsKey)
     }
 }

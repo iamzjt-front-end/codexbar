@@ -18,6 +18,16 @@ struct AccountRowView: View {
         let _ = language.identity
         let primaryDisplayPercent = displayPercent(forUsedPercent: account.primaryUsedPercent)
         let secondaryDisplayPercent = displayPercent(forUsedPercent: account.secondaryUsedPercent)
+        let primaryResetDescription = account.primaryResetDescription
+        let secondaryResetDescription = account.secondaryResetDescription
+        let showPrimaryReset = shouldShowResetTime(
+            description: primaryResetDescription,
+            usedPercent: account.primaryUsedPercent
+        )
+        let showSecondaryReset = shouldShowResetTime(
+            description: secondaryResetDescription,
+            usedPercent: account.secondaryUsedPercent
+        )
 
         VStack(alignment: .leading, spacing: 4) {
             // Line 1: org name + plan badge + active mark + switch button
@@ -130,62 +140,21 @@ struct AccountRowView: View {
                     Spacer()
                 }
             } else {
-                HStack(spacing: 8) {
-                    // 5h window
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 2) {
-                            Text("5h")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("\(Int(primaryDisplayPercent))%")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(usageColor(account.primaryUsedPercent))
-                                .contentTransition(.numericText())
-                                .animation(.easeInOut(duration: 0.3), value: primaryDisplayPercent)
-                        }
-                        ProgressView(value: min(primaryDisplayPercent / 100, 1.0))
-                            .tint(usageColor(account.primaryUsedPercent))
-                            .scaleEffect(x: 1, y: 0.7)
-                            .animation(.easeInOut(duration: 0.4), value: primaryDisplayPercent)
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    // 7d window
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 2) {
-                            Text("7d")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("\(Int(secondaryDisplayPercent))%")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(usageColor(account.secondaryUsedPercent))
-                                .contentTransition(.numericText())
-                                .animation(.easeInOut(duration: 0.3), value: secondaryDisplayPercent)
-                        }
-                        ProgressView(value: min(secondaryDisplayPercent / 100, 1.0))
-                            .tint(usageColor(account.secondaryUsedPercent))
-                            .scaleEffect(x: 1, y: 0.7)
-                            .animation(.easeInOut(duration: 0.4), value: secondaryDisplayPercent)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-
-            // Reset countdown
-            if !account.isBanned {
-                HStack(spacing: 8) {
-                    if account.primaryUsedPercent >= 70, !account.primaryResetDescription.isEmpty {
-                        Text("5h: " + account.primaryResetDescription)
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
-                    }
-                    if account.secondaryUsedPercent >= 70, !account.secondaryResetDescription.isEmpty {
-                        Text("7d: " + account.secondaryResetDescription)
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
-                    }
+                HStack(alignment: .top, spacing: 8) {
+                    quotaColumn(
+                        label: "5h",
+                        displayPercent: primaryDisplayPercent,
+                        usedPercent: account.primaryUsedPercent,
+                        resetDescription: primaryResetDescription,
+                        showReset: showPrimaryReset
+                    )
+                    quotaColumn(
+                        label: "7d",
+                        displayPercent: secondaryDisplayPercent,
+                        usedPercent: account.secondaryUsedPercent,
+                        resetDescription: secondaryResetDescription,
+                        showReset: showSecondaryReset
+                    )
                 }
             }
         }
@@ -256,5 +225,42 @@ struct AccountRowView: View {
         case .remaining:
             return min(max(100 - usedPercent, 0), 100)
         }
+    }
+
+    private func shouldShowResetTime(description: String, usedPercent: Double) -> Bool {
+        !description.isEmpty && (quotaDisplay.alwaysShowResetTime || usedPercent >= 70)
+    }
+
+    private func quotaColumn(
+        label: String,
+        displayPercent: Double,
+        usedPercent: Double,
+        resetDescription: String,
+        showReset: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 2) {
+                Text(label)
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(Int(displayPercent))%")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(usageColor(usedPercent))
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.3), value: displayPercent)
+            }
+            ProgressView(value: min(displayPercent / 100, 1.0))
+                .tint(usageColor(usedPercent))
+                .scaleEffect(x: 1, y: 0.7)
+                .animation(.easeInOut(duration: 0.4), value: displayPercent)
+            if showReset {
+                Text("\(label): \(resetDescription)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }

@@ -368,7 +368,7 @@ private final class StatusBarCapsuleView: NSView {
             barsView.frame = NSRect(
                 x: contentX,
                 y: 0,
-                width: contentWidth,
+                width: StatusQuotaBarsView.preferredWidth,
                 height: bounds.height
             )
         } else {
@@ -436,13 +436,19 @@ private final class StatusBarCapsuleView: NSView {
 }
 
 private final class StatusQuotaBarsView: NSView {
-    static let preferredWidth: CGFloat = 58
+    static let preferredWidth: CGFloat = 86.5
 
     private static let labelWidth: CGFloat = 13
+    private static let trackLabelGap: CGFloat = 2.5
+    private static let trackWidth: CGFloat = 44
+    private static let valueGap: CGFloat = 3
+    private static let valueWidth: CGFloat = 25
     private static let trackHeight: CGFloat = 3.2
     private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 7.5, weight: .medium)
-    private static let rowCenterGap: CGFloat = 7.4
+    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 8.0, weight: .semibold)
+    private static let rowCenterGap: CGFloat = 8.2
     private static let labelTextYOffset: CGFloat = -0.2
+    private static let valueTextYOffset: CGFloat = -0.2
     private static let fillAnimationKey = "codexbar.quotaFill"
     private static let fillAnimationDuration: CFTimeInterval = 0.38
 
@@ -512,15 +518,17 @@ private final class StatusQuotaBarsView: NSView {
         let rowOffset = Self.rowCenterGap / 2
         drawRow(
             label: "5h",
+            displayPercent: primaryDisplayPercent,
             centerY: bounds.midY + rowOffset
         )
         drawRow(
             label: "7d",
+            displayPercent: secondaryDisplayPercent,
             centerY: bounds.midY - rowOffset
         )
     }
 
-    private func drawRow(label: String, centerY: CGFloat) {
+    private func drawRow(label: String, displayPercent: Double, centerY: CGFloat) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .right
         let labelAttributes: [NSAttributedString.Key: Any] = [
@@ -537,15 +545,30 @@ private final class StatusQuotaBarsView: NSView {
         )
         (label as NSString).draw(in: labelRect, withAttributes: labelAttributes)
 
-        let trackX = Self.labelWidth + 4
-        let trackWidth = bounds.width - trackX
         let trackRect = NSRect(
-            x: trackX,
+            x: Self.trackX,
             y: centerY - Self.trackHeight / 2,
-            width: trackWidth,
+            width: Self.trackWidth,
             height: Self.trackHeight
         )
         drawPill(trackRect, color: NSColor.white.withAlphaComponent(0.18))
+
+        let value = "\(Int(Self.clamped(displayPercent)))%"
+        let valueParagraph = NSMutableParagraphStyle()
+        valueParagraph.alignment = .left
+        let valueAttributes: [NSAttributedString.Key: Any] = [
+            .font: Self.valueFont,
+            .foregroundColor: NSColor.white.withAlphaComponent(0.92),
+            .paragraphStyle: valueParagraph
+        ]
+        let valueSize = (value as NSString).size(withAttributes: valueAttributes)
+        let valueRect = NSRect(
+            x: trackRect.maxX + Self.valueGap,
+            y: centerY - valueSize.height / 2 + Self.valueTextYOffset,
+            width: Self.valueWidth,
+            height: valueSize.height
+        )
+        (value as NSString).draw(in: valueRect, withAttributes: valueAttributes)
     }
 
     private func setupFillLayers() {
@@ -655,13 +678,16 @@ private final class StatusQuotaBarsView: NSView {
     }
 
     private func trackRect(centerY: CGFloat) -> NSRect {
-        let trackX = Self.labelWidth + 4
         return NSRect(
-            x: trackX,
+            x: Self.trackX,
             y: centerY - Self.trackHeight / 2,
-            width: bounds.width - trackX,
+            width: Self.trackWidth,
             height: Self.trackHeight
         )
+    }
+
+    private static var trackX: CGFloat {
+        labelWidth + trackLabelGap
     }
 
     private static func color(forUsedPercent usedPercent: Double) -> NSColor {

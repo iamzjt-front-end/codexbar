@@ -117,30 +117,13 @@ struct TokenAccount: Codable, Identifiable {
         let remaining = date.timeIntervalSinceNow
         guard remaining > 0 else { return L.resetSoon }
 
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            return L.resetAt(formattedTime(date))
-        }
-        if calendar.isDateInTomorrow(date) {
-            return L.resetTomorrowAt(formattedTime(date))
-        }
-        return L.resetAtDate(formattedDateTime(date))
+        return L.resetAtDate(formattedResetDateTime(date))
     }
 
-    private func formattedTime(_ date: Date) -> String {
+    private func formattedResetDateTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
-    }
-
-    private func formattedDateTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
-        let calendar = Calendar.current
-        formatter.dateFormat = calendar.isDate(date, equalTo: Date(), toGranularity: .year)
-            ? "M/d HH:mm"
-            : "yyyy/M/d HH:mm"
+        formatter.dateFormat = "MM-dd HH:mm"
         return formatter.string(from: date)
     }
 }

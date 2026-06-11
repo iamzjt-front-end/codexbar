@@ -133,6 +133,12 @@ enum L {
     static func quotaAmountModeHelp(_ detail: String) -> String {
         zh ? "额度口径：\(detail)" : "Quota metric: \(detail)"
     }
+    static var resetTimeDisplayAlways: String { zh ? "始终" : "Always" }
+    static var resetTimeDisplayNearLimit: String { zh ? "临近时" : "Near limit" }
+    static var alwaysShowResetTime: String { zh ? "始终显示重置时间" : "Always show reset time" }
+    static func resetTimeDisplayHelp(_ detail: String) -> String {
+        zh ? "重置时间：\(detail)" : "Reset time: \(detail)"
+    }
     static var addAccount: String      { zh ? "添加账号"            : "Add Account" }
     static var importAccount: String   { zh ? "导入账号 JSON"       : "Import Accounts JSON" }
     static func importedCount(_ n: Int) -> String {

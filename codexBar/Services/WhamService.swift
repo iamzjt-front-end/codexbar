@@ -73,8 +73,8 @@ class WhamService {
                 updated.planType = result.planType
                 updated.primaryUsedPercent = result.primaryUsedPercent
                 updated.secondaryUsedPercent = result.secondaryUsedPercent
-                updated.primaryResetAt = result.primaryResetAt
-                updated.secondaryResetAt = result.secondaryResetAt
+                updated.primaryResetAt = result.primaryResetAt ?? Self.futureDate(account.primaryResetAt)
+                updated.secondaryResetAt = result.secondaryResetAt ?? Self.futureDate(account.secondaryResetAt)
                 updated.lastChecked = Date()
                 if let name { updated.organizationName = name }
                 store.addOrUpdate(updated)
@@ -112,8 +112,8 @@ class WhamService {
                             updated.planType = result.planType
                             updated.primaryUsedPercent = result.primaryUsedPercent
                             updated.secondaryUsedPercent = result.secondaryUsedPercent
-                            updated.primaryResetAt = result.primaryResetAt
-                            updated.secondaryResetAt = result.secondaryResetAt
+                            updated.primaryResetAt = result.primaryResetAt ?? Self.futureDate(account.primaryResetAt)
+                            updated.secondaryResetAt = result.secondaryResetAt ?? Self.futureDate(account.secondaryResetAt)
                             updated.lastChecked = Date()
                             if let name { updated.organizationName = name }
                             store.addOrUpdate(updated)
@@ -160,11 +160,9 @@ class WhamService {
             // secondary_window = 周额度，used_percent: 0=本周未用, 100=耗尽
             if let secondary = rateLimit["secondary_window"] as? [String: Any] {
                 let used = secondary["used_percent"] as? Double ?? 0
-                if used > 0 {
-                    secondaryUsedPercent = used
-                    if let ts = secondary["reset_at"] as? TimeInterval {
-                        secondaryResetAt = Date(timeIntervalSince1970: ts)
-                    }
+                secondaryUsedPercent = used
+                if let ts = secondary["reset_at"] as? TimeInterval {
+                    secondaryResetAt = Date(timeIntervalSince1970: ts)
                 }
             }
         }
@@ -176,6 +174,11 @@ class WhamService {
             primaryResetAt: primaryResetAt,
             secondaryResetAt: secondaryResetAt
         )
+    }
+
+    private static func futureDate(_ date: Date?) -> Date? {
+        guard let date, date.timeIntervalSinceNow > 0 else { return nil }
+        return date
     }
 }
 
