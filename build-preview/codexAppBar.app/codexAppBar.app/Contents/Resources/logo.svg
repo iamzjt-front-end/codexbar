@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Background -->
+  <rect width="100" height="100" rx="22" fill="#e8eef8"/>
+
+  <!-- Outer bracket left -->
+  <path d="M28 26 L16 50 L28 74" stroke="#4a7cdc" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Outer bracket right -->
+  <path d="M72 26 L84 50 L72 74" stroke="#4a7cdc" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Usage bars -->
+  <rect x="38" y="42" width="7" height="20" rx="2" fill="#8aaee8" opacity="0.6"/>
+  <rect x="47" y="34" width="7" height="28" rx="2" fill="#8aaee8" opacity="0.8"/>
+  <rect x="56" y="38" width="7" height="24" rx="2" fill="#4a7cdc"/>
+
+  <!-- Cursor dot -->
+  <circle cx="50" cy="70" r="4" fill="#4a7cdc"/>
+</svg>
