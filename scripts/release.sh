@@ -14,6 +14,87 @@ NOTES_FILE=""
 ASSUME_YES=0
 DRY_RUN=0
 ALLOW_DIRTY=0
+TASK_STARTED=0
+CANCELED=0
+TEMP_FILES=()
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  RESET=$'\033[0m'
+  BOLD=$'\033[1m'
+  DIM=$'\033[2m'
+  RED=$'\033[38;5;203m'
+  GREEN=$'\033[38;5;149m'
+  BLUE=$'\033[38;5;81m'
+  YELLOW=$'\033[38;5;221m'
+  MUTED=$'\033[38;5;245m'
+  BG_BLUE=$'\033[48;5;81m\033[38;5;236m'
+  BG_GREEN=$'\033[48;5;149m\033[38;5;236m'
+else
+  RESET=""
+  BOLD=""
+  DIM=""
+  RED=""
+  GREEN=""
+  BLUE=""
+  YELLOW=""
+  MUTED=""
+  BG_BLUE=""
+  BG_GREEN=""
+fi
+
+task_start() {
+  TASK_STARTED=1
+  printf '\n%s%s Release task start %s\n\n' "$BG_BLUE" "$BOLD" "$RESET"
+}
+
+task_end() {
+  printf '\n%s%s Release task end %s\n' "$BG_GREEN" "$BOLD" "$RESET"
+}
+
+step() {
+  printf '%s│%s\n' "$DIM" "$RESET"
+  printf '%s◇%s %s%s%s\n' "$GREEN" "$RESET" "$BOLD" "$1" "$RESET"
+}
+
+prompt_step() {
+  printf '%s│%s\n' "$DIM" "$RESET"
+  printf '%s■%s %s%s%s\n' "$RED" "$RESET" "$BOLD" "$1" "$RESET"
+}
+
+print_box() {
+  local title="$1"
+  local body="$2"
+  step "$title"
+  printf '%s┌────────────────────────────────────────%s\n' "$DIM" "$RESET"
+  while IFS= read -r line; do
+    printf '%s│%s  %s%s%s\n' "$DIM" "$RESET" "$BLUE" "${line:- }" "$RESET"
+  done <<< "$body"
+  printf '%s└────────────────────────────────────────%s\n' "$DIM" "$RESET"
+}
+
+cancel_release() {
+  CANCELED=1
+  exit 0
+}
+
+cleanup_and_finish() {
+  local status=$?
+  local file
+  for file in "${TEMP_FILES[@]:-}"; do
+    [[ -n "$file" ]] && rm -f "$file"
+  done
+
+  if [[ "$TASK_STARTED" == 1 ]]; then
+    if [[ "$CANCELED" == 1 ]]; then
+      printf '\n%sOperation canceled%s\n' "$RED" "$RESET"
+    elif [[ "$status" != 0 ]]; then
+      printf '\n%sRelease task failed%s\n' "$RED" "$RESET"
+    fi
+    task_end
+  fi
+}
+
+trap cleanup_and_finish EXIT
 
 usage() {
   cat <<'EOF'
@@ -29,12 +110,13 @@ Options:
   -h, --help        显示帮助
 
 脚本会执行：
-  1. 读取上一个 GitHub Release tag，并用 git log 生成中文 release notes
-  2. xcodebuild clean archive
-  3. 对 .app 做 ad-hoc 签名并验证
-  4. 生成干净 zip（无 ._* / .DS_Store）
-  5. 创建 annotated tag、推送 main/tag、创建 GitHub Release
-  6. 校验上传 asset，并更新 dist/.last_tag 与 dist/.last_asset
+  1. 交互式查询并选择发布 tag
+  2. 读取上一个 GitHub Release tag，并用 git log 生成中文 release notes
+  3. xcodebuild clean archive
+  4. 对 .app 做 ad-hoc 签名并验证
+  5. 生成干净 zip（无 ._* / .DS_Store）
+  6. 创建 annotated tag、推送 main/tag、创建 GitHub Release
+  7. 校验上传 asset，并更新 dist/.last_tag 与 dist/.last_asset
 EOF
 }
 
@@ -102,8 +184,57 @@ confirm() {
     echo "非交互环境请加 --yes。" >&2
     exit 1
   fi
-  read -r -p "$prompt [y/N] " reply
+  prompt_step "$prompt"
+  read -r -p "  Continue? [y/N] " reply
   [[ "$reply" == "y" || "$reply" == "Y" ]]
+}
+
+choose_release_tag() {
+  local suggested="$1"
+  local choice custom
+
+  if [[ -n "$TAG" ]]; then
+    print_box "Selected release tag" "$TAG"
+    return
+  fi
+
+  if [[ "$ASSUME_YES" == 1 || ! -t 0 ]]; then
+    TAG="$suggested"
+    print_box "Selected release tag" "$TAG"
+    return
+  fi
+
+  prompt_step "Select the version to release"
+  printf '  %s1)%s %s%s%s  %srecommended%s\n' "$YELLOW" "$RESET" "$BOLD" "$suggested" "$RESET" "$MUTED" "$RESET"
+  printf '  %s2)%s Custom tag\n' "$YELLOW" "$RESET"
+  printf '  %sq)%s Cancel\n' "$YELLOW" "$RESET"
+  read -r -p "  Choose [1]: " choice
+
+  case "${choice:-1}" in
+    1)
+      TAG="$suggested"
+      ;;
+    2)
+      read -r -p "  Enter custom tag: " custom
+      if [[ -z "$custom" ]]; then
+        cancel_release
+      fi
+      if tag_exists "$custom"; then
+        echo "tag 或 release 已存在：$custom" >&2
+        exit 1
+      fi
+      TAG="$custom"
+      ;;
+    q|Q)
+      cancel_release
+      ;;
+    *)
+      echo "无效选择：$choice" >&2
+      exit 1
+      ;;
+  esac
+
+  print_box "Selected release tag" "$TAG"
 }
 
 tag_exists() {
@@ -169,6 +300,8 @@ require_cmd ditto
 require_cmd unzip
 require_cmd shasum
 
+task_start
+
 if [[ ! -d .git ]]; then
   echo "请在仓库根目录运行 scripts/release.sh。" >&2
   exit 1
@@ -191,11 +324,11 @@ if [[ -n "$NOTES_FILE" && ! -f "$NOTES_FILE" ]]; then
   exit 1
 fi
 
+step "Querying git tags"
 run git fetch origin --tags --prune --prune-tags
+step "Tag query completed"
 
-if [[ -z "$TAG" ]]; then
-  TAG="$(next_date_tag)"
-elif tag_exists "$TAG"; then
+if [[ -n "$TAG" ]] && tag_exists "$TAG"; then
   echo "tag 或 release 已存在：$TAG" >&2
   exit 1
 fi
@@ -204,6 +337,10 @@ last_release_tag="$(gh release list --repo "$REPO" --limit 1 --json tagName --jq
 if [[ -z "$last_release_tag" || "$last_release_tag" == "null" ]]; then
   last_release_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
 fi
+print_box "Last release tag" "${last_release_tag:-undefined}"
+
+suggested_tag="$(next_date_tag)"
+choose_release_tag "$suggested_tag"
 
 release_range=""
 if [[ -n "$last_release_tag" ]] && git rev-parse -q --verify "${last_release_tag}^{commit}" >/dev/null 2>&1; then
@@ -228,20 +365,17 @@ asset_name="codexAppBar-${marketing_version}-${date_suffix}-release.zip"
 asset_path="dist/${asset_name}"
 app_path="${ARCHIVE_PATH}/${APP_RELATIVE_PATH}"
 
-echo "发布目标："
-echo "  Repo:       $REPO"
-echo "  Branch:     $current_branch"
-echo "  Tag:        $TAG"
-echo "  Last tag:   ${last_release_tag:-<none>}"
-echo "  Range:      ${release_range:-<all commits>}"
-echo "  Asset:      $asset_path"
-echo
+print_box "Release target" "Repo:   $REPO
+Branch: $current_branch
+Tag:    $TAG
+Range:  ${release_range:-<all commits>}
+Asset:  $asset_path"
 
 confirm "确认开始构建并发布 ${TAG}？" || {
-  echo "已取消发布。"
-  exit 0
+  cancel_release
 }
 
+step "Archive app"
 run xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
@@ -257,9 +391,11 @@ if [[ "$DRY_RUN" != 1 && ! -d "$app_path" ]]; then
   exit 1
 fi
 
+step "Sign and verify app"
 run codesign --force --deep --sign - "$app_path"
 run codesign --verify --deep --strict --verbose=2 "$app_path"
 
+step "Package release zip"
 run mkdir -p dist
 run rm -f "$asset_path"
 run ditto --norsrc -c -k --keepParent "$app_path" "$asset_path"
@@ -277,7 +413,7 @@ if [[ "$DRY_RUN" != 1 ]]; then
 fi
 
 notes_tmp="$(mktemp -t codexbar-release-notes.XXXXXX.md)"
-trap 'rm -f "$notes_tmp"' EXIT
+TEMP_FILES+=("$notes_tmp")
 if [[ -n "$NOTES_FILE" ]]; then
   cp "$NOTES_FILE" "$notes_tmp"
 else
@@ -285,17 +421,15 @@ else
 fi
 
 echo
-echo "Release notes:"
-echo "--------------"
+step "Release notes preview"
 cat "$notes_tmp"
-echo "--------------"
 echo
 
 confirm "确认创建 tag、推送并发布 GitHub Release？" || {
-  echo "已取消发布。"
-  exit 0
+  cancel_release
 }
 
+step "Create tag and publish GitHub Release"
 run git tag -a "$TAG" -m "CodexAppBar $TAG"
 run git push origin "$current_branch"
 run git push origin "$TAG"
@@ -315,6 +449,7 @@ if [[ "$DRY_RUN" != 1 ]]; then
   gh release view "$TAG" --repo "$REPO"
 fi
 
+step "Sync local release metadata"
 run git fetch --tags --prune --prune-tags
 if [[ "$DRY_RUN" != 1 ]]; then
   printf '%s\n' "$TAG" > dist/.last_tag
