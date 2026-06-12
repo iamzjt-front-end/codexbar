@@ -41,7 +41,9 @@ final class CodexSessionStatusService: ObservableObject {
 
     @Published private(set) var status = CodexSessionStatus()
 
-    private let staleRunningInterval: TimeInterval = 60
+    // Codex can spend several minutes reasoning or running one long tool without
+    // emitting another hook event, so a short heartbeat timeout hides real work.
+    private let staleRunningInterval: TimeInterval = 30 * 60
     private let staleCompactInterval: TimeInterval = 10 * 60
     private let staleReadyInterval: TimeInterval = 600
     private let statusURL: URL
