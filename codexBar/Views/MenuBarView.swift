@@ -62,7 +62,7 @@ struct MenuBarView: View {
     }
 
     private var availableCount: Int {
-        store.accounts.filter { $0.usageStatus == .ok }.count
+        store.accounts.filter(\.isAvailable).count
     }
 
     private var accountListHeight: CGFloat {

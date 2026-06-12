@@ -94,6 +94,7 @@ struct TokenAccount: Codable, Identifiable {
     var primaryExhausted: Bool { primaryUsedPercent >= 100 }
     var secondaryExhausted: Bool { secondaryUsedPercent >= 100 }
     var quotaExhausted: Bool { primaryExhausted || secondaryExhausted }
+    var isAvailable: Bool { !tokenExpired && !isBanned && !quotaExhausted }
 
     var usageStatus: UsageStatus {
         if isBanned { return .banned }
