@@ -49,6 +49,8 @@ struct AccountRowView: View {
                     .foregroundColor(planBadgeColor)
                     .cornerRadius(3)
 
+                resetCreditsBadge
+
                 if isActive {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.accentColor)
@@ -210,6 +212,36 @@ struct AccountRowView: View {
         account.planType
             .lowercased()
             .replacingOccurrences(of: "[_\\-\\s]", with: "", options: .regularExpression)
+    }
+
+    private var resetCreditsBadge: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "gift.fill")
+                .font(.system(size: 8, weight: .medium))
+            Text(resetCreditsText)
+                .font(.system(size: 9, weight: .medium))
+                .monospacedDigit()
+        }
+        .foregroundColor(resetCreditsColor)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(resetCreditsColor.opacity(0.12))
+        .cornerRadius(3)
+        .help(L.resetCreditsHelp)
+        .accessibilityLabel(L.resetCreditsAvailable)
+        .accessibilityValue(resetCreditsText)
+    }
+
+    private var resetCreditsText: String {
+        guard let count = account.rateLimitResetCreditsAvailableCount else { return L.resetCreditsUnknown }
+        return L.resetCreditsCount(count)
+    }
+
+    private var resetCreditsColor: Color {
+        guard let count = account.rateLimitResetCreditsAvailableCount, count > 0 else {
+            return .secondary
+        }
+        return .accentColor
     }
 
     private func usageColor(_ percent: Double) -> Color {

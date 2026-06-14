@@ -67,16 +67,7 @@ class WhamService {
             async let orgName = self.fetchOrgName(account: account)
             let (result, name) = try await (usageResult, orgName)
             await MainActor.run {
-                var updated = account
-                updated.tokenExpired = false
-                updated.isSuspended = false
-                updated.planType = result.planType
-                updated.primaryUsedPercent = result.primaryUsedPercent
-                updated.secondaryUsedPercent = result.secondaryUsedPercent
-                updated.primaryResetAt = result.primaryResetAt ?? Self.futureDate(account.primaryResetAt)
-                updated.secondaryResetAt = result.secondaryResetAt ?? Self.futureDate(account.secondaryResetAt)
-                updated.lastChecked = Date()
-                if let name { updated.organizationName = name }
+                let updated = Self.updatedAccount(account, with: result, orgName: name)
                 store.addOrUpdate(updated)
             }
         } catch WhamError.forbidden {
@@ -106,16 +97,7 @@ class WhamService {
                         async let orgName = self.fetchOrgName(account: account)
                         let (result, name) = try await (usageResult, orgName)
                         await MainActor.run {
-                            var updated = account
-                            updated.tokenExpired = false
-                            updated.isSuspended = false
-                            updated.planType = result.planType
-                            updated.primaryUsedPercent = result.primaryUsedPercent
-                            updated.secondaryUsedPercent = result.secondaryUsedPercent
-                            updated.primaryResetAt = result.primaryResetAt ?? Self.futureDate(account.primaryResetAt)
-                            updated.secondaryResetAt = result.secondaryResetAt ?? Self.futureDate(account.secondaryResetAt)
-                            updated.lastChecked = Date()
-                            if let name { updated.organizationName = name }
+                            let updated = Self.updatedAccount(account, with: result, orgName: name)
                             store.addOrUpdate(updated)
                         }
                     } catch WhamError.forbidden {
@@ -146,6 +128,7 @@ class WhamService {
         var secondaryUsedPercent: Double = 0
         var primaryResetAt: Date? = nil
         var secondaryResetAt: Date? = nil
+        var rateLimitResetCreditsAvailableCount: Int?
 
         if let rateLimit = json["rate_limit"] as? [String: Any] {
 
@@ -167,18 +150,49 @@ class WhamService {
             }
         }
 
+        if let resetCredits = json["rate_limit_reset_credits"] as? [String: Any] {
+            rateLimitResetCreditsAvailableCount = Self.intValue(resetCredits["available_count"])
+        }
+
         return WhamUsageResult(
             planType: planType,
             primaryUsedPercent: primaryUsedPercent,
             secondaryUsedPercent: secondaryUsedPercent,
             primaryResetAt: primaryResetAt,
-            secondaryResetAt: secondaryResetAt
+            secondaryResetAt: secondaryResetAt,
+            rateLimitResetCreditsAvailableCount: rateLimitResetCreditsAvailableCount
         )
+    }
+
+    @MainActor
+    private static func updatedAccount(_ account: TokenAccount, with result: WhamUsageResult, orgName: String?) -> TokenAccount {
+        let nextPrimaryResetAt = result.primaryResetAt ?? futureDate(account.primaryResetAt)
+        let nextSecondaryResetAt = result.secondaryResetAt ?? futureDate(account.secondaryResetAt)
+
+        var updated = account
+        updated.tokenExpired = false
+        updated.isSuspended = false
+        updated.planType = result.planType
+        updated.primaryUsedPercent = result.primaryUsedPercent
+        updated.secondaryUsedPercent = result.secondaryUsedPercent
+        updated.primaryResetAt = nextPrimaryResetAt
+        updated.secondaryResetAt = nextSecondaryResetAt
+        updated.rateLimitResetCreditsAvailableCount = result.rateLimitResetCreditsAvailableCount
+        updated.lastChecked = Date()
+        if let orgName { updated.organizationName = orgName }
+        return updated
     }
 
     private static func futureDate(_ date: Date?) -> Date? {
         guard let date, date.timeIntervalSinceNow > 0 else { return nil }
         return date
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let int = value as? Int { return int }
+        if let double = value as? Double { return Int(double) }
+        if let string = value as? String { return Int(string) }
+        return nil
     }
 }
 
@@ -188,6 +202,7 @@ struct WhamUsageResult {
     let secondaryUsedPercent: Double
     let primaryResetAt: Date?
     let secondaryResetAt: Date?
+    let rateLimitResetCreditsAvailableCount: Int?
 }
 
 enum WhamError: LocalizedError {

@@ -539,9 +539,21 @@ struct MenuBarView: View {
     }
 
     private func refreshAccount(_ account: TokenAccount) async {
-        refreshingAccounts.insert(account.id)
-        await WhamService.shared.refreshOne(account: account, store: store)
-        refreshingAccounts.remove(account.id)
+        let accountID = account.id
+        refreshingAccounts.insert(accountID)
+        defer { refreshingAccounts.remove(accountID) }
+
+        RefreshService.shared.syncActiveFromAuthJson(store: store)
+        var target = latestAccount(matching: account)
+        if RefreshService.shared.needsRefresh(target) {
+            _ = await RefreshService.shared.refreshAndPersist(target, store: store)
+            target = latestAccount(matching: target)
+        }
+        await WhamService.shared.refreshOne(account: target, store: store)
+    }
+
+    private func latestAccount(matching account: TokenAccount) -> TokenAccount {
+        store.accounts.first { $0.accountId == account.accountId } ?? account
     }
 
     private func reauthAccount(_ account: TokenAccount) {

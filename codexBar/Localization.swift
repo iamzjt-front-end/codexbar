@@ -139,6 +139,17 @@ enum L {
     static func resetTimeDisplayHelp(_ detail: String) -> String {
         zh ? "重置时间：\(detail)" : "Reset time: \(detail)"
     }
+    static var resetCreditsAvailable: String { zh ? "可用重置次数" : "Available resets" }
+    static func resetCreditsCount(_ n: Int) -> String {
+        if zh { return "\(n) 次" }
+        return n == 1 ? "1 reset" : "\(n) resets"
+    }
+    static var resetCreditsUnknown: String { "--" }
+    static var resetCreditsHelp: String {
+        zh
+            ? "官方 banked Codex rate-limit reset 次数；邀请奖励到账后会增加。"
+            : "Official banked Codex rate-limit resets. Successful referral rewards add to this count."
+    }
     static var addAccount: String      { zh ? "添加账号"            : "Add Account" }
     static var importAccount: String   { zh ? "导入账号 JSON"       : "Import Accounts JSON" }
     static func importedCount(_ n: Int) -> String {

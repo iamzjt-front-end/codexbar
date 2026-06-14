@@ -14,6 +14,7 @@ struct TokenAccount: Codable, Identifiable {
     var secondaryUsedPercent: Double // 周窗口已使用%
     var primaryResetAt: Date?        // 5h 窗口重置绝对时间
     var secondaryResetAt: Date?      // 周窗口重置绝对时间
+    var rateLimitResetCreditsAvailableCount: Int? // 官方 banked Codex 重置次数
     var lastChecked: Date?
     var isActive: Bool
     var isSuspended: Bool       // 403 = 账号被封禁/停用
@@ -34,6 +35,7 @@ struct TokenAccount: Codable, Identifiable {
         case secondaryUsedPercent = "secondary_used_percent"
         case primaryResetAt = "primary_reset_at"
         case secondaryResetAt = "secondary_reset_at"
+        case rateLimitResetCreditsAvailableCount = "rate_limit_reset_credits_available_count"
         case lastChecked = "last_checked"
         case isActive = "is_active"
         case isSuspended = "is_suspended"
@@ -55,6 +57,7 @@ struct TokenAccount: Codable, Identifiable {
         secondaryUsedPercent = try c.decodeIfPresent(Double.self, forKey: .secondaryUsedPercent) ?? 0
         primaryResetAt = try c.decodeIfPresent(Date.self, forKey: .primaryResetAt)
         secondaryResetAt = try c.decodeIfPresent(Date.self, forKey: .secondaryResetAt)
+        rateLimitResetCreditsAvailableCount = try c.decodeIfPresent(Int.self, forKey: .rateLimitResetCreditsAvailableCount)
         lastChecked = try c.decodeIfPresent(Date.self, forKey: .lastChecked)
         isActive = try c.decodeIfPresent(Bool.self, forKey: .isActive) ?? false
         isSuspended = try c.decodeIfPresent(Bool.self, forKey: .isSuspended) ?? false
@@ -67,6 +70,7 @@ struct TokenAccount: Codable, Identifiable {
          planType: String = "free", primaryUsedPercent: Double = 0,
          secondaryUsedPercent: Double = 0,
          primaryResetAt: Date? = nil, secondaryResetAt: Date? = nil,
+         rateLimitResetCreditsAvailableCount: Int? = nil,
          lastChecked: Date? = nil, isActive: Bool = false, isSuspended: Bool = false, tokenExpired: Bool = false,
          organizationName: String? = nil) {
         self.email = email
@@ -81,6 +85,7 @@ struct TokenAccount: Codable, Identifiable {
         self.secondaryUsedPercent = secondaryUsedPercent
         self.primaryResetAt = primaryResetAt
         self.secondaryResetAt = secondaryResetAt
+        self.rateLimitResetCreditsAvailableCount = rateLimitResetCreditsAvailableCount
         self.lastChecked = lastChecked
         self.isActive = isActive
         self.isSuspended = isSuspended
