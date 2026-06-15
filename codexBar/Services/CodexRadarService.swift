@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-@preconcurrency import UserNotifications
 
 @MainActor
 final class CodexRadarService: ObservableObject {
@@ -13,15 +12,9 @@ final class CodexRadarService: ObservableObject {
 
     private let statusURL = URL(string: "https://codexradar.com/current.json")!
     private let websiteURL = URL(string: "https://codexradar.com/")!
-    private let refreshInterval: TimeInterval = 180
-    private let staleInterval: TimeInterval = 30 * 60
-    private let defaults = UserDefaults.standard
+    private let refreshInterval: TimeInterval = 15 * 60
+    private let staleInterval: TimeInterval = 6 * 60 * 60
     private var timer: Timer?
-
-    private enum DefaultsKey {
-        static let lastWindowNotification = "codexRadar.lastWindowNotification"
-        static let lastPredictionLevel = "codexRadar.lastPredictionLevel"
-    }
 
     private init() {}
 
@@ -53,6 +46,7 @@ final class CodexRadarService: ObservableObject {
         do {
             var request = URLRequest(url: statusURL)
             request.timeoutInterval = 10
+            request.cachePolicy = .reloadIgnoringLocalCacheData
             request.setValue("application/json", forHTTPHeaderField: "Accept")
 
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -65,52 +59,8 @@ final class CodexRadarService: ObservableObject {
             snapshot = decoded
             lastFetchAt = Date()
             lastError = nil
-            notifyIfNeeded(decoded)
         } catch {
             lastError = error.localizedDescription
-        }
-    }
-
-    private func notifyIfNeeded(_ snapshot: CodexRadarSnapshot) {
-        if snapshot.windowOpen {
-            let notificationKey = snapshot.window.openedAtRaw
-                ?? snapshot.window.title
-                ?? snapshot.monitoredAtRaw
-                ?? "open"
-            if defaults.string(forKey: DefaultsKey.lastWindowNotification) != notificationKey {
-                defaults.set(notificationKey, forKey: DefaultsKey.lastWindowNotification)
-                sendNotification(
-                    title: L.zh ? "Codex 速蹬窗口开启" : "Codex reset window open",
-                    body: snapshot.window.message ?? snapshot.window.title ?? snapshot.window.scope ?? "CodexRadar"
-                )
-            }
-        }
-
-        let level = snapshot.prediction?.level?.lowercased() ?? "none"
-        let previousLevel = defaults.string(forKey: DefaultsKey.lastPredictionLevel)
-        if level == "high", previousLevel != "high" {
-            sendNotification(
-                title: L.zh ? "Codex 重置概率升高" : "Codex reset probability high",
-                body: snapshot.prediction?.probabilitySummary ?? (L.zh ? "预测已升至高概率" : "Prediction moved to high")
-            )
-        }
-        defaults.set(level, forKey: DefaultsKey.lastPredictionLevel)
-    }
-
-    private func sendNotification(title: String, body: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = .default
-            let request = UNNotificationRequest(
-                identifier: "codexradar-\(Date().timeIntervalSince1970)",
-                content: content,
-                trigger: nil
-            )
-            center.add(request)
         }
     }
 
@@ -157,20 +107,10 @@ private enum DateFormatters {
 struct CodexRadarSnapshot: Decodable {
     let monitoredAt: Date?
     let monitoredAtRaw: String?
-    let windowOpen: Bool
-    let status: String?
-    let recommendedAction: String?
-    let window: CodexRadarWindow
-    let prediction: CodexRadarPrediction?
     let modelIQ: CodexRadarModelIQ?
 
     enum CodingKeys: String, CodingKey {
         case monitoredAt = "monitored_at"
-        case windowOpen = "window_open"
-        case status
-        case recommendedAction = "recommended_action"
-        case window
-        case prediction
         case modelIQ = "model_iq"
     }
 
@@ -178,86 +118,36 @@ struct CodexRadarSnapshot: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         monitoredAt = try container.decodeIfPresent(Date.self, forKey: .monitoredAt)
         monitoredAtRaw = try container.decodeIfPresent(String.self, forKey: .monitoredAt)
-        windowOpen = try container.decodeIfPresent(Bool.self, forKey: .windowOpen) ?? false
-        status = try container.decodeIfPresent(String.self, forKey: .status)
-        recommendedAction = try container.decodeIfPresent(String.self, forKey: .recommendedAction)
-        window = try container.decodeIfPresent(CodexRadarWindow.self, forKey: .window) ?? CodexRadarWindow()
-        prediction = try container.decodeIfPresent(CodexRadarPrediction.self, forKey: .prediction)
         modelIQ = try container.decodeIfPresent(CodexRadarModelIQ.self, forKey: .modelIQ)
-    }
-}
-
-struct CodexRadarWindow: Decodable {
-    var open: Bool = false
-    var status: String?
-    var action: String?
-    var message: String?
-    var title: String?
-    var scope: String?
-    var openedAt: Date?
-    var openedAtRaw: String?
-    var closedAt: Date?
-    var sourceURL: URL?
-
-    enum CodingKeys: String, CodingKey {
-        case open
-        case status
-        case action
-        case message
-        case title
-        case scope
-        case openedAt = "opened_at"
-        case closedAt = "closed_at"
-        case sourceURL = "source_url"
-    }
-
-    init() {}
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        open = try container.decodeIfPresent(Bool.self, forKey: .open) ?? false
-        status = try container.decodeIfPresent(String.self, forKey: .status)
-        action = try container.decodeIfPresent(String.self, forKey: .action)
-        message = try container.decodeIfPresent(String.self, forKey: .message)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        scope = try container.decodeIfPresent(String.self, forKey: .scope)
-        openedAt = try container.decodeIfPresent(Date.self, forKey: .openedAt)
-        openedAtRaw = try container.decodeIfPresent(String.self, forKey: .openedAt)
-        closedAt = try container.decodeIfPresent(Date.self, forKey: .closedAt)
-        sourceURL = try container.decodeIfPresent(URL.self, forKey: .sourceURL)
-    }
-}
-
-struct CodexRadarPrediction: Decodable {
-    let level: String?
-    let probability24h: Double?
-    let probability48h: Double?
-    let expectedWindow: String?
-    let summary: String?
-    let summaryEN: String?
-    let updatedAt: Date?
-
-    var probabilitySummary: String {
-        let p24 = Int((probability24h ?? 0) * 100)
-        let p48 = Int((probability48h ?? 0) * 100)
-        return "24h \(p24)% · 48h \(p48)%"
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case level
-        case probability24h = "probability_24h"
-        case probability48h = "probability_48h"
-        case expectedWindow = "expected_window"
-        case summary
-        case summaryEN = "summary_en"
-        case updatedAt = "updated_at"
     }
 }
 
 struct CodexRadarModelIQ: Decodable {
     let latest: CodexRadarModelIQEntry?
+    let comparisons: [String: CodexRadarModelIQComparison]
 
     enum CodingKeys: String, CodingKey {
+        case latest
+        case comparisons
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        latest = try container.decodeIfPresent(CodexRadarModelIQEntry.self, forKey: .latest)
+        comparisons = try container.decodeIfPresent([String: CodexRadarModelIQComparison].self, forKey: .comparisons) ?? [:]
+    }
+}
+
+struct CodexRadarModelIQComparison: Decodable {
+    let label: String?
+    let model: String?
+    let reasoningEffort: String?
+    let latest: CodexRadarModelIQEntry?
+
+    enum CodingKeys: String, CodingKey {
+        case label
+        case model
+        case reasoningEffort = "reasoning_effort"
         case latest
     }
 }
@@ -268,8 +158,16 @@ struct CodexRadarModelIQEntry: Decodable {
     let status: String?
     let passed: Int?
     let tasks: Int?
+    let totalTokens: Int?
+    let inputTokens: Int?
+    let cachedInputTokens: Int?
+    let outputTokens: Int?
+    let wallSeconds: Int?
+    let wallTimeHuman: String?
     let model: String?
     let reasoningEffort: String?
+    let validTasks: Int?
+    let costUSD: Double?
 
     enum CodingKeys: String, CodingKey {
         case date
@@ -277,7 +175,20 @@ struct CodexRadarModelIQEntry: Decodable {
         case status
         case passed
         case tasks
+        case totalTokens = "total_tokens"
+        case inputTokens = "input_tokens"
+        case cachedInputTokens = "cached_input_tokens"
+        case outputTokens = "output_tokens"
+        case wallSeconds = "wall_seconds"
+        case wallTimeHuman = "wall_time_human"
         case model
         case reasoningEffort = "reasoning_effort"
+        case validTasks = "valid_tasks"
+        case costUSD = "cost_usd"
+    }
+
+    var cacheHitPercent: Double? {
+        guard let cachedInputTokens, let inputTokens, inputTokens > 0 else { return nil }
+        return Double(cachedInputTokens) / Double(inputTokens) * 100
     }
 }

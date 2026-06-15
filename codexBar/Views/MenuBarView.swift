@@ -17,6 +17,8 @@ struct MenuBarView: View {
     @State private var now = Date()
     @State private var refreshingAccounts: Set<String> = []
     @State private var lastVisibleRefresh = Date()
+    @State private var showRefreshCompleted = false
+    @State private var refreshFeedbackHideTask: Task<Void, Never>?
 
     // 每秒刷新相对时间显示，并按用户选择的频率决定是否拉取额度。
     private let tickTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -65,10 +67,27 @@ struct MenuBarView: View {
         store.accounts.filter(\.isAvailable).count
     }
 
+    private var availabilityBadgeColor: Color {
+        availableCount > 0 ? CodexStatusPalette.ok : CodexStatusPalette.unavailable
+    }
+
     private var accountListHeight: CGFloat {
         let headerHeight = CGFloat(groupedAccounts.count) * 18
         let rowHeight = CGFloat(store.accounts.count) * 72
-        return min(380, max(110, headerHeight + rowHeight + 16))
+        return min(320, max(110, headerHeight + rowHeight + 16))
+    }
+
+    private var refreshStatusText: String? {
+        if isRefreshing { return L.refreshing }
+        if showRefreshCompleted { return L.refreshed }
+        return nil
+    }
+
+    private var refreshHelpText: String {
+        if let lastUpdate = store.accounts.compactMap({ $0.lastChecked }).max() {
+            return "\(L.refreshUsage) · \(relativeTime(lastUpdate))"
+        }
+        return L.refreshUsage
     }
 
     var body: some View {
@@ -80,11 +99,16 @@ struct MenuBarView: View {
 
                 if !store.accounts.isEmpty {
                     Text(L.available(availableCount, store.accounts.count))
-                        .font(.system(size: 10))
-                        .padding(.horizontal, 5)
+                        .font(.system(size: 10, weight: .semibold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(availableCount > 0 ? Color.green.opacity(0.15) : Color.red.opacity(0.15))
-                        .foregroundColor(availableCount > 0 ? .green : .red)
+                        .background(availabilityBadgeColor.opacity(0.18))
+                        .foregroundColor(availabilityBadgeColor)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(availabilityBadgeColor.opacity(0.28), lineWidth: 0.8)
+                        )
                         .cornerRadius(4)
                 }
 
@@ -93,12 +117,23 @@ struct MenuBarView: View {
                         .font(.system(size: 10, weight: .medium))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.15))
-                        .foregroundColor(.orange)
+                        .background(CodexStatusPalette.warning.opacity(0.16))
+                        .foregroundColor(CodexStatusPalette.warning)
                         .cornerRadius(4)
                 }
 
                 Spacer()
+
+                if let refreshStatusText {
+                    Text(refreshStatusText)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(isRefreshing ? .secondary : CodexStatusPalette.ok)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12))
+                        .cornerRadius(4)
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+                }
 
                 Button {
                     Task { await refresh() }
@@ -112,11 +147,12 @@ struct MenuBarView: View {
                 }
                 .buttonStyle(.borderless)
                 .focusable(false)
-                .help(L.refreshUsage)
+                .help(refreshHelpText)
                 .disabled(isRefreshing)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .animation(.easeInOut(duration: 0.16), value: refreshStatusText)
 
             Divider()
 
@@ -223,136 +259,136 @@ struct MenuBarView: View {
                 TokenStatsView()
             }
 
-            if !store.accounts.isEmpty {
-                Divider()
-                HStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Text(L.alwaysShowResetTime)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button {
-                        quotaDisplay.setAlwaysShowResetTime(!quotaDisplay.alwaysShowResetTime)
-                    } label: {
-                        ResetTimeSwitch(isOn: quotaDisplay.alwaysShowResetTime)
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .help(quotaDisplay.resetTimeHelpText)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-            }
-
             Divider()
 
             // 底部操作栏
-            HStack(alignment: .center, spacing: 8) {
-                if let lastUpdate = store.accounts.compactMap({ $0.lastChecked }).max() {
-                    Text(relativeTime(lastUpdate))
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .frame(height: 18, alignment: .center)
+            HStack(alignment: .center, spacing: 0) {
+                HStack(spacing: 8) {
+                    Button {
+                        oauth.startOAuth { result in
+                            switch result {
+                            case .success(let tokens):
+                                let account = AccountBuilder.build(from: tokens)
+                                store.addOrUpdate(account)
+                                Task { await WhamService.shared.refreshOne(account: account, store: store) }
+                            case .failure(let error):
+                                showError = error.localizedDescription
+                            }
+                    }
+                } label: {
+                    Image(systemName: "person.badge.key")
+                        .font(.system(size: 12))
+                        .frame(width: 18, height: 18, alignment: .center)
+                }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(L.addAccount)
+
+                    Button {
+                        importAccounts()
+                    } label: {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 12))
+                            .frame(width: 18, height: 18, alignment: .center)
+                    }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(L.importAccount)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                Button {
-                    oauth.startOAuth { result in
-                        switch result {
-                        case .success(let tokens):
-                            let account = AccountBuilder.build(from: tokens)
-                            store.addOrUpdate(account)
-                            Task { await WhamService.shared.refreshOne(account: account, store: store) }
-                        case .failure(let error):
-                            showError = error.localizedDescription
+                HStack(spacing: 8) {
+                    Button {
+                        refreshFrequency.cycle()
+                        lastVisibleRefresh = .distantPast
+                    } label: {
+                        HStack(alignment: .center, spacing: 2) {
+                            Image(systemName: "timer")
+                                .font(.system(size: 11))
+                            Text(refreshFrequency.buttonLabel)
+                                .font(.system(size: 10, weight: .medium))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
+                        .frame(height: 18, alignment: .center)
                     }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12))
-                        .frame(width: 18, height: 18, alignment: .center)
-                }
-                .buttonStyle(.borderless)
-                .focusable(false)
-                .help(L.addAccount)
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(refreshFrequency.helpText)
 
-                Button {
-                    importAccounts()
-                } label: {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 12))
-                        .frame(width: 18, height: 18, alignment: .center)
-                }
-                .buttonStyle(.borderless)
-                .focusable(false)
-                .help(L.importAccount)
-
-                Button {
-                    refreshFrequency.cycle()
-                    lastVisibleRefresh = .distantPast
-                } label: {
-                    HStack(alignment: .center, spacing: 2) {
-                        Image(systemName: "timer")
-                            .font(.system(size: 11))
-                        Text(refreshFrequency.buttonLabel)
+                    Button {
+                        quotaDisplay.toggleAmountMode()
+                    } label: {
+                        Text(quotaDisplay.amountMode.shortLabel)
                             .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(height: 18, alignment: .center)
                     }
-                    .frame(height: 18, alignment: .center)
-                }
-                .buttonStyle(.borderless)
-                .focusable(false)
-                .help(refreshFrequency.helpText)
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(quotaDisplay.amountHelpText)
 
-                Button {
-                    quotaDisplay.toggleAmountMode()
-                } label: {
-                    Text(quotaDisplay.amountMode.shortLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .frame(height: 18, alignment: .center)
-                }
-                .buttonStyle(.borderless)
-                .focusable(false)
-                .help(quotaDisplay.amountHelpText)
+                    Button {
+                        quotaDisplay.toggle()
+                    } label: {
+                        Text(quotaDisplay.mode.shortLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(height: 18, alignment: .center)
+                    }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(quotaDisplay.displayHelpText)
 
-                Button {
-                    quotaDisplay.toggle()
-                } label: {
-                    Text(quotaDisplay.mode.shortLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .frame(height: 18, alignment: .center)
-                }
-                .buttonStyle(.borderless)
-                .focusable(false)
-                .help(quotaDisplay.displayHelpText)
+                    Button {
+                        quotaDisplay.toggleStatusLights()
+                    } label: {
+                        StatusLightsToggleIcon(isOn: quotaDisplay.showStatusLights)
+                            .frame(width: 22, height: 18, alignment: .center)
+                    }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(quotaDisplay.statusLightsHelpText)
 
-                Button {
-                    language.cycle()
-                } label: {
-                    Text(language.buttonLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .frame(height: 18, alignment: .center)
                 }
-                .buttonStyle(.borderless)
-                .focusable(false)
-                .help(language.switchLanguageHelp)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.07))
+                )
 
-                Button {
-                    NSApplication.shared.terminate(nil)
-                } label: {
-                    Image(systemName: "power")
-                        .font(.system(size: 12))
-                        .frame(width: 18, height: 18, alignment: .center)
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    Button {
+                        language.cycle()
+                    } label: {
+                        Text(language.buttonLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .frame(height: 18, alignment: .center)
+                    }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(language.switchLanguageHelp)
+
+                    Button {
+                        NSApplication.shared.terminate(nil)
+                    } label: {
+                        Image(systemName: "power")
+                            .font(.system(size: 12))
+                            .frame(width: 18, height: 18, alignment: .center)
+                    }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .help(L.quit)
                 }
-                .buttonStyle(.borderless)
-                .focusable(false)
-                .help(L.quit)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
         }
         .frame(width: 300)
         .onReceive(tickTimer) { tickDate in
@@ -374,7 +410,11 @@ struct MenuBarView: View {
             codexHookInstaller.refresh()
             TokenStatsService.shared.refresh()
         }
-        .onDisappear { menuVisible = false }
+        .onDisappear {
+            menuVisible = false
+            refreshFeedbackHideTask?.cancel()
+            refreshFeedbackHideTask = nil
+        }
     }
 
     private func relativeTime(_ date: Date) -> String {
@@ -500,12 +540,11 @@ struct MenuBarView: View {
 
     private func refresh() async {
         let accountIDs = Set(store.accounts.map(\.id))
+        refreshFeedbackHideTask?.cancel()
+        refreshFeedbackHideTask = nil
+        showRefreshCompleted = false
         isRefreshing = true
         refreshingAccounts.formUnion(accountIDs)
-        defer {
-            isRefreshing = false
-            refreshingAccounts.subtract(accountIDs)
-        }
 
         async let radarRefresh: Void = CodexRadarService.shared.refresh()
         await RefreshService.shared.refreshExpiring(store: store)
@@ -513,6 +552,17 @@ struct MenuBarView: View {
         await radarRefresh
         lastVisibleRefresh = Date()
         TokenStatsService.shared.refresh()
+        isRefreshing = false
+        refreshingAccounts.subtract(accountIDs)
+        showRefreshCompleted = true
+        refreshFeedbackHideTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                showRefreshCompleted = false
+                refreshFeedbackHideTask = nil
+            }
+        }
     }
 
     private func importAccounts() {
@@ -595,23 +645,22 @@ struct MenuBarView: View {
     }
 }
 
-private struct ResetTimeSwitch: View {
+private struct StatusLightsToggleIcon: View {
     let isOn: Bool
 
     var body: some View {
-        Capsule()
-            .fill(isOn ? Color.accentColor : Color.secondary.opacity(0.22))
-            .overlay(alignment: isOn ? .trailing : .leading) {
-                Circle()
-                    .fill(Color.white)
-                    .shadow(color: .black.opacity(0.16), radius: 1.5, x: 0, y: 0.8)
-                    .padding(2)
-            }
-            .frame(width: 36, height: 20)
-            .contentShape(Capsule())
-            .animation(.easeInOut(duration: 0.16), value: isOn)
-            .accessibilityLabel(L.alwaysShowResetTime)
-            .accessibilityValue(isOn ? L.resetTimeDisplayAlways : L.resetTimeDisplayNearLimit)
+        HStack(spacing: 2.2) {
+            light(.red, active: isOn)
+            light(.yellow, active: isOn)
+            light(.green, active: isOn)
+        }
+        .opacity(isOn ? 1 : 0.45)
+    }
+
+    private func light(_ color: Color, active: Bool) -> some View {
+        Circle()
+            .fill(active ? color : Color.secondary.opacity(0.45))
+            .frame(width: 5.2, height: 5.2)
     }
 }
 

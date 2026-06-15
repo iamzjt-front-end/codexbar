@@ -32,6 +32,21 @@ A macOS menu bar app for managing multiple ChatGPT/Codex accounts. Switch accoun
 3. Select your development team in **Signing & Capabilities**
 4. Build and run (`⌘R`)
 
+For local rerun during development:
+
+```sh
+scripts/restart-local.sh
+```
+
+常用参数：
+
+```sh
+scripts/restart-local.sh --config Debug   # select build configuration
+scripts/restart-local.sh --build-only    # only compile, do not launch
+scripts/restart-local.sh --run-only      # only relaunch app, skip compile
+scripts/restart-local.sh --clean         # run `clean` before build
+```
+
 ## Usage
 
 1. Launch CodexAppBar — it appears in the menu bar

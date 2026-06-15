@@ -114,7 +114,7 @@ enum L {
 
     // MARK: - MenuBarView
     static var noAccounts: String      { zh ? "还没有账号"          : "No Accounts" }
-    static var addAccountHint: String  { zh ? "点击下方 + 添加账号"   : "Tap + below to add an account" }
+    static var addAccountHint: String  { zh ? "点击下方授权账号"      : "Authorize an account below" }
     static var refreshUsage: String    { zh ? "刷新用量"            : "Refresh Usage" }
     static func refreshFrequencyHelp(_ detail: String) -> String {
         zh ? "额度刷新频率：\(detail)" : "Quota refresh frequency: \(detail)"
@@ -139,6 +139,11 @@ enum L {
     static func resetTimeDisplayHelp(_ detail: String) -> String {
         zh ? "重置时间：\(detail)" : "Reset time: \(detail)"
     }
+    static var statusLightsVisible: String { zh ? "显示" : "Shown" }
+    static var statusLightsHidden: String { zh ? "隐藏" : "Hidden" }
+    static func statusLightsDisplayHelp(_ detail: String) -> String {
+        zh ? "顶部红绿灯：\(detail)" : "Menu bar status lights: \(detail)"
+    }
     static var resetCreditsAvailable: String { zh ? "可用重置次数" : "Available resets" }
     static func resetCreditsCount(_ n: Int) -> String {
         if zh { return "\(n) 次" }
@@ -150,7 +155,7 @@ enum L {
             ? "官方 banked Codex rate-limit reset 次数；邀请奖励到账后会增加。"
             : "Official banked Codex rate-limit resets. Successful referral rewards add to this count."
     }
-    static var addAccount: String      { zh ? "添加账号"            : "Add Account" }
+    static var addAccount: String      { zh ? "授权账号"            : "Authorize Account" }
     static var importAccount: String   { zh ? "导入账号 JSON"       : "Import Accounts JSON" }
     static func importedCount(_ n: Int) -> String {
         zh ? "已导入 \(n) 个账号" : "Imported \(n) account(s)"
@@ -161,6 +166,8 @@ enum L {
     static var continueRestart: String { zh ? "继续"               : "Continue" }
     static var cancel: String          { zh ? "取消"               : "Cancel" }
     static var justUpdated: String     { zh ? "刚刚更新"            : "Just updated" }
+    static var refreshing: String      { zh ? "刷新中"              : "Refreshing" }
+    static var refreshed: String       { zh ? "已刷新"              : "Refreshed" }
     static var restartCodexTitle: String {
         zh ? "切换账号需要重启 Codex" : "Switching Account Requires Restarting Codex"
     }
@@ -276,4 +283,24 @@ enum L {
     }
     static var heatmapLess: String { zh ? "少" : "Less" }
     static var heatmapMore: String { zh ? "多" : "More" }
+
+    // MARK: - CodexRadar
+    static var modelQualityTitle: String { zh ? "模型质量" : "Model Quality" }
+    static var modelQualityRefreshHelp: String { zh ? "刷新模型质量" : "Refresh model quality" }
+    static var modelQualityOpenHelp: String { zh ? "打开 CodexRadar" : "Open CodexRadar" }
+    static var modelQualityBenchmarkNote: String {
+        zh ? "固定 DeepSWE 任务集，分数越高越好" : "Fixed DeepSWE benchmark, higher is better"
+    }
+    static func modelQualityPassLine(date: String, passed: String, tasks: String, baseline: String) -> String {
+        if zh {
+            return "\(date) \(passed)/\(tasks) 通过，基线 \(baseline)/\(tasks)"
+        }
+        return "\(date) \(passed)/\(tasks) passed, baseline \(baseline)/\(tasks)"
+    }
+    static var modelQualityMetricCost: String { zh ? "费用" : "Cost" }
+    static var modelQualityMetricTime: String { zh ? "耗时" : "Time" }
+    static var modelQualityMetricCache: String { zh ? "缓存" : "Cache" }
+    static var modelQualityMetricTokens: String { zh ? "Tokens" : "Tokens" }
+    static var modelQualityReading: String { zh ? "正在读取 codexradar.com" : "Reading codexradar.com" }
+    static var modelQualityNoData: String { zh ? "暂无模型质量数据" : "No model quality data" }
 }

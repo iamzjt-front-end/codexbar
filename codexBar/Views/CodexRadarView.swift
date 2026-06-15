@@ -2,201 +2,311 @@ import AppKit
 import SwiftUI
 
 struct CodexRadarView: View {
+    @EnvironmentObject var language: LanguageSettings
     @ObservedObject private var radar = CodexRadarService.shared
 
     var body: some View {
-        let presentation = presentation
+        let _ = language.identity
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: presentation.iconName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(presentation.tint)
-                    .frame(width: 18, height: 18)
+        VStack(alignment: .leading, spacing: 8) {
+            header
 
-                HStack(spacing: 6) {
-                    Text(presentation.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-
-                    if let badge = presentation.badge {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(presentation.tint)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(presentation.tint.opacity(0.12))
-                            .cornerRadius(5)
-                    }
-                }
-                .frame(height: 18, alignment: .center)
-
-                Spacer(minLength: 4)
-
-                HStack(alignment: .center, spacing: 7) {
-                    Button {
-                        Task { await radar.refresh() }
-                    } label: {
-                        RefreshIconView(
-                            isRefreshing: radar.isRefreshing,
-                            size: 15,
-                            fontSize: 10,
-                            weight: .medium
-                        )
-                        .frame(width: 18, height: 18)
-                    }
-                    .buttonStyle(.borderless)
-                    .focusable(false)
-                    .foregroundColor(.secondary)
-                    .help(L.zh ? "刷新 Codex 雷达" : "Refresh Codex Radar")
-                    .disabled(radar.isRefreshing)
-
-                    Button {
-                        NSWorkspace.shared.open(radar.homepageURL)
-                    } label: {
-                        Image(systemName: "arrow.up.right.square")
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(width: 18, height: 18)
-                    }
-                    .buttonStyle(.borderless)
-                    .focusable(false)
-                    .foregroundColor(.secondary)
-                    .help(L.zh ? "打开 Codex 雷达" : "Open Codex Radar")
-                }
-                .frame(height: 18, alignment: .center)
+            if let latest = radar.snapshot?.modelIQ?.latest {
+                qualitySummary(latest)
+                comparisonList
+            } else {
+                emptyState
             }
-
-            Text(presentation.subtitle)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 26)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(presentation.tint.opacity(0.10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(presentation.tint.opacity(0.58), lineWidth: 1.3)
-                )
-        )
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .onAppear {
+            if radar.snapshot == nil {
+                Task { await radar.refresh() }
+            }
+        }
     }
 
-    private var presentation: RadarPresentation {
-        guard let snapshot = radar.snapshot else {
-            if radar.isRefreshing {
-                return RadarPresentation(
-                    title: L.zh ? "Codex 雷达同步中" : "Codex Radar syncing",
-                    subtitle: L.zh ? "正在获取重置预测" : "Fetching reset prediction",
-                    badge: nil,
-                    iconName: "antenna.radiowaves.left.and.right",
-                    tint: .blue
-                )
+    private var header: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "gauge.with.dots.needle.67percent")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.accentColor)
+                .frame(width: 16, height: 16)
+
+            Text(L.modelQualityTitle)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.primary)
+
+            if let updatedText {
+                Text(updatedText)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .monospacedDigit()
             }
 
-            return RadarPresentation(
-                title: L.zh ? "Codex 雷达暂不可用" : "Codex Radar unavailable",
-                subtitle: radar.lastError ?? (L.zh ? "稍后自动重试" : "Will retry automatically"),
-                badge: nil,
-                iconName: "wifi.exclamationmark",
-                tint: .secondary
+            Spacer(minLength: 4)
+
+            Button {
+                Task { await radar.refresh() }
+            } label: {
+                RefreshIconView(
+                    isRefreshing: radar.isRefreshing,
+                    size: 14,
+                    fontSize: 10,
+                    weight: .medium
+                )
+                .frame(width: 17, height: 17)
+            }
+            .buttonStyle(.borderless)
+            .focusable(false)
+            .foregroundColor(.secondary)
+            .disabled(radar.isRefreshing)
+            .help(L.modelQualityRefreshHelp)
+            .accessibilityLabel(L.modelQualityRefreshHelp)
+
+            Button {
+                NSWorkspace.shared.open(radar.homepageURL)
+            } label: {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 10, weight: .medium))
+                    .frame(width: 17, height: 17)
+            }
+            .buttonStyle(.borderless)
+            .focusable(false)
+            .foregroundColor(.secondary)
+            .help(L.modelQualityOpenHelp)
+            .accessibilityLabel(L.modelQualityOpenHelp)
+        }
+    }
+
+    @ViewBuilder
+    private func qualitySummary(_ latest: CodexRadarModelIQEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(modelName(for: latest))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Text(passLine(for: latest))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+
+                Spacer(minLength: 6)
+
+                VStack(alignment: .trailing, spacing: -1) {
+                    Text(scoreText(latest.score))
+                        .font(.system(size: 25, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(statusColor(latest.status))
+                        .minimumScaleFactor(0.78)
+                        .lineLimit(1)
+                        .contentTransition(.numericText())
+
+                    Text("IQ")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.045))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(statusColor(latest.status).opacity(0.28), lineWidth: 0.8)
+                    )
             )
         }
+    }
 
-        if radar.isStale {
-            return RadarPresentation(
-                title: L.zh ? "Codex 雷达数据已过期" : "Codex Radar stale",
-                subtitle: lastUpdatedText,
-                badge: nil,
-                iconName: "clock.badge.exclamationmark",
-                tint: .secondary
-            )
+    private var comparisonList: some View {
+        let comparisons = orderedComparisons
+
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(comparisons.prefix(3)), id: \.id) { item in
+                comparisonLine(item)
+            }
         }
+    }
 
-        if snapshot.windowOpen {
-            return RadarPresentation(
-                title: L.zh ? "速蹬窗口开启" : "Reset window open",
-                subtitle: snapshot.window.message ?? snapshot.window.title ?? (L.zh ? "建议先用剩余额度" : "Use remaining quota first"),
-                badge: L.zh ? "窗口" : "Open",
-                iconName: "bolt.circle.fill",
-                tint: .orange
-            )
+    private var emptyState: some View {
+        HStack(spacing: 7) {
+            Image(systemName: radar.lastError == nil ? "ellipsis" : "wifi.exclamationmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            Text(emptyText)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+
+            Spacer()
         }
+        .frame(minHeight: 36)
+    }
 
-        let level = snapshot.prediction?.level?.lowercased() ?? "none"
-        switch level {
-        case "high":
-            return RadarPresentation(
-                title: L.zh ? "重置预测：高概率" : "Reset prediction: high",
-                subtitle: probabilityLine(snapshot),
-                badge: probabilityBadge(snapshot.prediction),
-                iconName: "exclamationmark.circle.fill",
-                tint: .red
-            )
-        case "medium":
-            return RadarPresentation(
-                title: L.zh ? "重置预测：中概率" : "Reset prediction: medium",
-                subtitle: probabilityLine(snapshot),
-                badge: probabilityBadge(snapshot.prediction),
-                iconName: "antenna.radiowaves.left.and.right",
-                tint: .yellow
-            )
-        case "low":
-            return RadarPresentation(
-                title: L.zh ? "重置预测：低概率" : "Reset prediction: low",
-                subtitle: probabilityLine(snapshot),
-                badge: probabilityBadge(snapshot.prediction),
-                iconName: "checkmark.circle.fill",
-                tint: .green
-            )
+    private func comparisonLine(_ item: RadarComparisonItem) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(statusColor(item.entry.status))
+                .frame(width: 5, height: 5)
+
+            Text(item.shortLabel)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(alignment: .center, spacing: 4) {
+                Text("IQ")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+
+                Text(scoreText(item.entry.score))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(statusColor(item.entry.status))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.88)
+                    .allowsTightening(true)
+            }
+            .frame(width: 62, alignment: .trailing)
+            .layoutPriority(1)
+        }
+        .frame(height: 22)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.primary.opacity(0.028))
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private var updatedText: String? {
+        guard let date = radar.snapshot?.monitoredAt ?? radar.lastFetchAt else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private var emptyText: String {
+        if radar.isRefreshing {
+            return L.modelQualityReading
+        }
+        if let lastError = radar.lastError {
+            return lastError
+        }
+        return L.modelQualityNoData
+    }
+
+    private var orderedComparisons: [RadarComparisonItem] {
+        guard let comparisons = radar.snapshot?.modelIQ?.comparisons else { return [] }
+        let preferredOrder = ["gpt_55_high", "gpt_55_medium", "gpt_54_xhigh"]
+        return comparisons
+            .compactMap { key, comparison -> RadarComparisonItem? in
+                guard let latest = comparison.latest else { return nil }
+                return RadarComparisonItem(
+                    id: key,
+                    label: comparison.label ?? modelName(
+                        model: comparison.model ?? latest.model,
+                        effort: comparison.reasoningEffort ?? latest.reasoningEffort
+                    ),
+                    entry: latest
+                )
+            }
+            .sorted {
+                let left = preferredOrder.firstIndex(of: $0.id) ?? Int.max
+                let right = preferredOrder.firstIndex(of: $1.id) ?? Int.max
+                if left != right { return left < right }
+                return $0.label < $1.label
+            }
+    }
+
+    private func modelName(for entry: CodexRadarModelIQEntry) -> String {
+        modelName(model: entry.model, effort: entry.reasoningEffort)
+    }
+
+    private func modelName(model: String?, effort: String?) -> String {
+        let modelText = model?.uppercased().replacingOccurrences(of: "GPT-", with: "GPT-") ?? "Codex"
+        guard let effort, !effort.isEmpty else { return modelText }
+        return "\(modelText) \(effort)"
+    }
+
+    private func scoreText(_ score: Double?) -> String {
+        guard let score else { return "--" }
+        return String(format: "%.1f", score)
+    }
+
+    private func passLine(for entry: CodexRadarModelIQEntry) -> String {
+        guard let passed = entry.passed,
+              let tasks = entry.tasks,
+              let baseline = baselinePassed(for: entry),
+              let dateText = displayDateText(entry.date) else {
+            return L.modelQualityBenchmarkNote
+        }
+        return L.modelQualityPassLine(
+            date: dateText,
+            passed: "\(passed)",
+            tasks: "\(tasks)",
+            baseline: "\(baseline)"
+        )
+    }
+
+    private func baselinePassed(for entry: CodexRadarModelIQEntry) -> Int? {
+        guard let passed = entry.passed, let score = entry.score, score > 0 else { return nil }
+        return Int((Double(passed) * 100 / score).rounded())
+    }
+
+    private func displayDateText(_ rawDate: String?) -> String? {
+        guard let rawDate, !rawDate.isEmpty else { return nil }
+
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.dateFormat = "yyyy-MM-dd"
+
+        guard let date = parser.date(from: rawDate) else { return rawDate }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
+        formatter.dateFormat = L.zh ? "M月d日" : "MMM d"
+        return formatter.string(from: date)
+    }
+
+    private func statusColor(_ status: String?) -> Color {
+        switch status?.lowercased() {
+        case "green":
+            return CodexStatusPalette.ok
+        case "yellow":
+            return CodexStatusPalette.warning
+        case "red":
+            return CodexStatusPalette.danger
         default:
-            return RadarPresentation(
-                title: L.zh ? "暂无速蹬窗口" : "No reset window",
-                subtitle: probabilityLine(snapshot),
-                badge: nil,
-                iconName: "checkmark.circle.fill",
-                tint: .green
-            )
+            return .accentColor
         }
-    }
-
-    private var lastUpdatedText: String {
-        guard let date = radar.lastFetchAt else {
-            return L.zh ? "尚未更新" : "Not updated yet"
-        }
-        let seconds = max(0, Int(Date().timeIntervalSince(date)))
-        if seconds < 60 { return L.zh ? "刚刚更新" : "Just updated" }
-        if seconds < 3600 {
-            return L.zh ? "\(seconds / 60) 分钟前更新" : "Updated \(seconds / 60)m ago"
-        }
-        return L.zh ? "\(seconds / 3600) 小时前更新" : "Updated \(seconds / 3600)h ago"
-    }
-
-    private func probabilityLine(_ snapshot: CodexRadarSnapshot) -> String {
-        let probability = snapshot.prediction?.probabilitySummary
-            ?? (L.zh ? "暂无概率" : "No probability")
-        if let summary = snapshot.prediction?.summary, !summary.isEmpty {
-            return "\(probability) · \(summary)"
-        }
-        return "\(probability) · \(lastUpdatedText)"
-    }
-
-    private func probabilityBadge(_ prediction: CodexRadarPrediction?) -> String? {
-        guard let probability48h = prediction?.probability48h else { return nil }
-        return "\(Int(probability48h * 100))%"
     }
 }
 
-private struct RadarPresentation {
-    let title: String
-    let subtitle: String
-    let badge: String?
-    let iconName: String
-    let tint: Color
+private struct RadarComparisonItem {
+    let id: String
+    let label: String
+    let entry: CodexRadarModelIQEntry
+
+    var shortLabel: String {
+        label
+            .replacingOccurrences(of: "GPT-", with: "")
+            .replacingOccurrences(of: " ", with: "-")
+    }
 }

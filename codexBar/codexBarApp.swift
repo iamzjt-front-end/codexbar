@@ -18,7 +18,6 @@ struct codexBarApp: App {
         BackgroundRefresher.shared.start(interval: RefreshFrequencySettings.shared.selection.backgroundInterval)
         CodexSessionStatusService.shared.start()
         CodexHookInstallerService.shared.start()
-        CodexRadarService.shared.start()
         AppStatusBarController.shared.start(
             store: TokenStore.shared,
             oauth: OAuthManager.shared,
@@ -125,6 +124,11 @@ private final class AppStatusBarController: NSObject {
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
 
+        quotaDisplay.$showStatusLights
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
+
         codexSessionStatus.$status
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
@@ -153,7 +157,11 @@ private final class AppStatusBarController: NSObject {
               let codexHookInstaller else { return }
         let quotaState = Self.quotaState(from: store, amountMode: quotaDisplay.amountMode)
         let iconName = Self.iconName(from: store)
-        let width = StatusBarCapsuleView.width(for: quotaState, mode: quotaDisplay.mode)
+        let width = StatusBarCapsuleView.width(
+            for: quotaState,
+            mode: quotaDisplay.mode,
+            showStatusLights: quotaDisplay.showStatusLights
+        )
         let light: CodexSessionLight = codexHookInstaller.state.needsAction ? .offline : codexSessionStatus.status.light
 
         if abs(lastStatusItemWidth - width) > 0.5 {
@@ -162,7 +170,13 @@ private final class AppStatusBarController: NSObject {
         }
 
         capsuleView.frame = button.bounds
-        capsuleView.configure(iconName: iconName, quotaState: quotaState, mode: quotaDisplay.mode, light: light)
+        capsuleView.configure(
+            iconName: iconName,
+            quotaState: quotaState,
+            mode: quotaDisplay.mode,
+            light: light,
+            showStatusLights: quotaDisplay.showStatusLights
+        )
         button.toolTip = codexHookInstaller.state.needsAction ? L.codexHookTooltipNeedsInstall : codexSessionStatus.helpText
     }
 
@@ -291,7 +305,7 @@ private final class StatusBarCapsuleView: NSView {
     private static let iconSize: CGFloat = 16
     private static let textGap: CGFloat = 3
     private static let barsGap: CGFloat = 4
-    private static let lightGap: CGFloat = 7
+    private static let lightGap: CGFloat = 5
     private static let textRenderPadding: CGFloat = 4
     private static let dotSize: CGFloat = 8.4
     private static let dotGap: CGFloat = 5.0
@@ -308,6 +322,7 @@ private final class StatusBarCapsuleView: NSView {
     private let lightsView = StatusTrafficLightsView(dotSize: dotSize, dotGap: dotGap)
     private var quotaState = StatusBarQuotaState.empty
     private var quotaMode: QuotaDisplayMode = .numbers
+    private var showStatusLights = true
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -323,16 +338,24 @@ private final class StatusBarCapsuleView: NSView {
         nil
     }
 
-    static func width(for quotaState: StatusBarQuotaState, mode: QuotaDisplayMode) -> CGFloat {
+    static func width(for quotaState: StatusBarQuotaState, mode: QuotaDisplayMode, showStatusLights: Bool) -> CGFloat {
         let contentWidth = contentWidth(for: quotaState, mode: mode)
         let contentGap = mode == .bars && quotaState.hasBars ? barsGap : textGap
-        return leftPadding + iconSize + contentGap + contentWidth + lightGap + lightsWidth + rightPadding
+        let statusLightsWidth = showStatusLights ? lightGap + lightsWidth : 0
+        return leftPadding + iconSize + contentGap + contentWidth + statusLightsWidth + rightPadding
     }
 
-    func configure(iconName: String, quotaState: StatusBarQuotaState, mode: QuotaDisplayMode, light: CodexSessionLight) {
+    func configure(
+        iconName: String,
+        quotaState: StatusBarQuotaState,
+        mode: QuotaDisplayMode,
+        light: CodexSessionLight,
+        showStatusLights: Bool
+    ) {
         iconView.image = Self.statusIcon(systemName: iconName)
         self.quotaState = quotaState
         quotaMode = mode
+        self.showStatusLights = showStatusLights
         if textField.stringValue != quotaState.text {
             textField.stringValue = quotaState.text
         }
@@ -343,6 +366,7 @@ private final class StatusBarCapsuleView: NSView {
             secondaryUsedPercent: quotaState.secondaryUsedPercent ?? 0
         )
         lightsView.configure(light: light)
+        lightsView.isHidden = !showStatusLights
         needsLayout = true
     }
 
@@ -382,12 +406,18 @@ private final class StatusBarCapsuleView: NSView {
             )
         }
 
-        lightsView.frame = NSRect(
-            x: contentX + contentWidth + Self.lightGap,
-            y: 0,
-            width: Self.lightsWidth,
-            height: bounds.height
-        )
+        if showStatusLights {
+            lightsView.isHidden = false
+            lightsView.frame = NSRect(
+                x: contentX + contentWidth + Self.lightGap,
+                y: 0,
+                width: Self.lightsWidth,
+                height: bounds.height
+            )
+        } else {
+            lightsView.isHidden = true
+            lightsView.frame = .zero
+        }
     }
 
     private func setup() {
@@ -436,12 +466,12 @@ private final class StatusBarCapsuleView: NSView {
 }
 
 private final class StatusQuotaBarsView: NSView {
-    static let preferredWidth: CGFloat = 86.5
+    static let preferredWidth: CGFloat = 88
 
     private static let labelWidth: CGFloat = 13
     private static let trackLabelGap: CGFloat = 2.5
     private static let trackWidth: CGFloat = 44
-    private static let valueGap: CGFloat = 3
+    private static let valueGap: CGFloat = 3.5
     private static let valueWidth: CGFloat = 25
     private static let trackHeight: CGFloat = 3.2
     private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 7.5, weight: .medium)
@@ -691,9 +721,7 @@ private final class StatusQuotaBarsView: NSView {
     }
 
     private static func color(forUsedPercent usedPercent: Double) -> NSColor {
-        if usedPercent >= 90 { return .systemRed }
-        if usedPercent >= 70 { return .systemOrange }
-        return .systemGreen
+        CodexStatusPalette.nsColor(forUsedPercent: usedPercent)
     }
 
     private static func clamped(_ percent: Double) -> Double {

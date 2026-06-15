@@ -41,7 +41,11 @@ final class CodexHookInstallerService: ObservableObject {
 
     private static let hookScriptName = "codexbar-session-status-hook.py"
     private static let hookIdentity = "codexbar-session-status-hook.py"
+    private static let hookTimeout = 2
 
+    // Keep hooks on low-frequency conversation events. Tool hooks can receive
+    // large payloads and should not sit on Codex's main turn path just to update
+    // the menu bar lights.
     private static let specs: [CodexHookSpec] = [
         CodexHookSpec(
             event: "SessionStart",
@@ -62,22 +66,10 @@ final class CodexHookInstallerService: ObservableObject {
             statusMessage: "Marking CodexAppBar running"
         ),
         CodexHookSpec(
-            event: "PreToolUse",
-            matcher: "*",
-            scriptArguments: ["PreToolUse"],
-            statusMessage: "Updating CodexAppBar tool status"
-        ),
-        CodexHookSpec(
             event: "PermissionRequest",
             matcher: "*",
             scriptArguments: ["PermissionRequest"],
             statusMessage: "Marking CodexAppBar attention"
-        ),
-        CodexHookSpec(
-            event: "PostToolUse",
-            matcher: "*",
-            scriptArguments: ["PostToolUse"],
-            statusMessage: "Updating CodexAppBar tool result"
         ),
         CodexHookSpec(
             event: "Stop",
@@ -124,8 +116,7 @@ final class CodexHookInstallerService: ObservableObject {
             var root = try readRootObject()
             let currentState = installState(in: root, expectedScriptPath: scriptURL.path)
             if currentState == .needsUpdate,
-               !didAttemptAutomaticMigration,
-               containsLegacyCodexBarHook(in: root, expectedScriptPath: scriptURL.path) {
+               !didAttemptAutomaticMigration {
                 didAttemptAutomaticMigration = true
                 try writeMergedRootObject(from: root, backupExisting: true)
                 root = try readRootObject()
@@ -208,19 +199,9 @@ final class CodexHookInstallerService: ObservableObject {
         }
 
         if hasAllExpectedHooks {
-            return .installed
+            return containsUnexpectedCodexBarHook(in: hooks, expectedScriptPath: expectedScriptPath) ? .needsUpdate : .installed
         }
         return hasAnyCodexBarHook ? .needsUpdate : .missing
-    }
-
-    private func containsLegacyCodexBarHook(in root: [String: Any], expectedScriptPath: String) -> Bool {
-        guard let hooks = root["hooks"] as? [String: Any] else {
-            return false
-        }
-
-        return hooks.values.contains { value in
-            containsLegacyCodexBarHook(in: value, expectedScriptPath: expectedScriptPath)
-        }
     }
 
     private func mergedRootObject(_ root: [String: Any], scriptURL: URL) throws -> [String: Any] {
@@ -254,7 +235,7 @@ final class CodexHookInstallerService: ObservableObject {
                 [
                     "type": "command",
                     "command": command(for: spec, scriptURL: scriptURL),
-                    "timeout": 5,
+                    "timeout": Self.hookTimeout,
                     "statusMessage": spec.statusMessage
                 ]
             ]
@@ -299,17 +280,43 @@ final class CodexHookInstallerService: ObservableObject {
         return false
     }
 
-    private func containsLegacyCodexBarHook(in value: Any, expectedScriptPath: String) -> Bool {
-        if let entries = value as? [[String: Any]] {
-            return entries.contains { entry in
-                guard let hookItems = entry["hooks"] as? [[String: Any]] else { return false }
-                return hookItems.contains { hook in
-                    guard let command = hook["command"] as? String else { return false }
-                    return command.contains(Self.hookIdentity) && !command.contains(expectedScriptPath)
+    private func containsUnexpectedCodexBarHook(in hooks: [String: Any], expectedScriptPath: String) -> Bool {
+        for (event, value) in hooks {
+            guard let entries = value as? [[String: Any]] else { continue }
+            for entry in entries {
+                guard let hookItems = entry["hooks"] as? [[String: Any]] else { continue }
+                for hook in hookItems {
+                    guard let command = hook["command"] as? String,
+                          command.contains(Self.hookIdentity) else { continue }
+                    if !isExpectedCodexBarHook(
+                        event: event,
+                        entry: entry,
+                        hook: hook,
+                        command: command,
+                        expectedScriptPath: expectedScriptPath
+                    ) {
+                        return true
+                    }
                 }
             }
         }
         return false
+    }
+
+    private func isExpectedCodexBarHook(
+        event: String,
+        entry: [String: Any],
+        hook: [String: Any],
+        command: String,
+        expectedScriptPath: String
+    ) -> Bool {
+        Self.specs.contains { spec in
+            spec.event == event &&
+                matcherMatches(entry["matcher"] as? String, expected: spec.matcher) &&
+                (hook["timeout"] as? Int ?? Self.hookTimeout) == Self.hookTimeout &&
+                command.contains(expectedScriptPath) &&
+                spec.scriptArguments.allSatisfy { command.contains($0) }
+        }
     }
 
     private func matcherMatches(_ actual: String?, expected: String?) -> Bool {

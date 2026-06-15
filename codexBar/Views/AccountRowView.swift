@@ -129,19 +129,9 @@ struct AccountRowView: View {
                         .foregroundColor(.red)
                     Spacer()
                 }
-            } else if account.quotaExhausted {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.orange)
-                    let label = account.secondaryExhausted ? L.weeklyExhausted : L.primaryExhausted
-                    let resetDesc = account.secondaryExhausted ? account.secondaryResetDescription : account.primaryResetDescription
-                    Text(resetDesc.isEmpty ? label : "\(label) · \(resetDesc)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.orange)
-                    Spacer()
-                }
             } else {
+                // 额度耗尽时仍保留双列布局：100% 进度条以 danger 色填满，
+                // 重置时间显示在对应列下方，行高与可用状态保持一致。
                 HStack(alignment: .top, spacing: 8) {
                     quotaColumn(
                         label: "5h",
@@ -183,18 +173,16 @@ struct AccountRowView: View {
     }
 
     private var statusColor: Color {
-        if account.isBanned { return .red }
-        if account.quotaExhausted { return .orange }
-        if account.primaryUsedPercent >= 80 || account.secondaryUsedPercent >= 80 { return .yellow }
-        return .green
+        if account.tokenExpired { return CodexStatusPalette.warning }
+        return CodexStatusPalette.color(for: account.usageStatus)
     }
 
     private var planBadgeColor: Color {
         switch normalizedPlanType {
         case "free": return .green
-        case "prolite", "pro5x", "codexpro5x": return Color(red: 0.95, green: 0.50, blue: 0.16)
-        case "pro", "promax", "pro20x", "codexpro20x": return Color(red: 0.80, green: 0.28, blue: 0.06)
-        case "team": return .blue
+        case "prolite", "pro5x", "codexpro5x": return .blue
+        case "pro", "promax", "pro20x", "codexpro20x": return .indigo
+        case "team": return .teal
         case "plus": return .purple
         default: return .gray
         }
@@ -241,13 +229,11 @@ struct AccountRowView: View {
         guard let count = account.rateLimitResetCreditsAvailableCount, count > 0 else {
             return .secondary
         }
-        return .accentColor
+        return CodexStatusPalette.ok
     }
 
     private func usageColor(_ percent: Double) -> Color {
-        if percent >= 90 { return .red }
-        if percent >= 70 { return .orange }
-        return .green
+        CodexStatusPalette.color(forUsedPercent: percent)
     }
 
     private func displayPercent(forUsedPercent usedPercent: Double) -> Double {

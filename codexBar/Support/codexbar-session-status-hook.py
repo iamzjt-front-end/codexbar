@@ -189,4 +189,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        # The menu bar indicator is best-effort. Never make a Codex turn wait
+        # on, or fail because of, this status bridge.
+        sys.exit(0)
