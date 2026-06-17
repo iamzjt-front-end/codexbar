@@ -17,6 +17,8 @@ ALLOW_DIRTY=0
 TASK_STARTED=0
 CANCELED=0
 TEMP_FILES=()
+LOG_DIR=""
+LOG_INDEX=0
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   RESET=$'\033[0m'
@@ -72,6 +74,85 @@ print_box() {
   printf '%s└────────────────────────────────────────%s\n' "$DIM" "$RESET"
 }
 
+ensure_log_dir() {
+  if [[ -z "$LOG_DIR" ]]; then
+    LOG_DIR="$(mktemp -d -t codexbar-release-logs.XXXXXX)"
+  fi
+}
+
+slugify_label() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//'
+}
+
+print_log_tail() {
+  local log_file="$1"
+  printf '%s│%s  %s日志：%s%s\n' "$DIM" "$RESET" "$MUTED" "$log_file" "$RESET" >&2
+  if [[ -s "$log_file" ]]; then
+    printf '%s│%s  %s最近 80 行输出：%s\n' "$DIM" "$RESET" "$MUTED" "$RESET" >&2
+    tail -n 80 "$log_file" >&2
+  fi
+}
+
+run_progress() {
+  local running_label="$1"
+  local done_label="$2"
+  shift 2
+
+  if [[ "$DRY_RUN" == 1 ]]; then
+    step "$running_label"
+    run "$@"
+    return
+  fi
+
+  ensure_log_dir
+
+  local slug log_file pid status frame_index frame
+  slug="$(slugify_label "$running_label")"
+  [[ -z "$slug" ]] && slug="command"
+  LOG_INDEX=$((LOG_INDEX + 1))
+  log_file="${LOG_DIR}/$(printf '%02d' "$LOG_INDEX")-${slug}.log"
+
+  printf '%s│%s\n' "$DIM" "$RESET"
+
+  set +e
+  "$@" >"$log_file" 2>&1 &
+  pid=$!
+
+  if [[ -t 1 ]]; then
+    local frames=("-" "\\" "|" "/")
+    frame_index=0
+    while kill -0 "$pid" >/dev/null 2>&1; do
+      frame="${frames[$frame_index]}"
+      printf '\r\033[K%s◇%s %s%s%s %s%s%s' "$GREEN" "$RESET" "$BLUE" "$frame" "$RESET" "$BOLD" "$running_label" "$RESET"
+      frame_index=$(((frame_index + 1) % ${#frames[@]}))
+      sleep 0.12
+    done
+  else
+    printf '%s◇%s %s...%s %s%s%s\n' "$GREEN" "$RESET" "$BLUE" "$RESET" "$BOLD" "$running_label" "$RESET"
+  fi
+
+  wait "$pid"
+  status=$?
+  set -e
+
+  if [[ "$status" == 0 ]]; then
+    if [[ -t 1 ]]; then
+      printf '\r\033[K%s◇%s %s✓%s %s%s%s\n' "$GREEN" "$RESET" "$GREEN" "$RESET" "$BOLD" "$done_label" "$RESET"
+    else
+      printf '%s│%s  %s✓%s %s%s%s\n' "$DIM" "$RESET" "$GREEN" "$RESET" "$BOLD" "$done_label" "$RESET"
+    fi
+    return 0
+  fi
+
+  if [[ -t 1 ]]; then
+    printf '\r\033[K%s◇%s %s✕%s %s%s%s\n' "$RED" "$RESET" "$RED" "$RESET" "$BOLD" "$running_label" "$RESET" >&2
+  else
+    printf '%s│%s  %s✕%s %s%s%s\n' "$DIM" "$RESET" "$RED" "$RESET" "$BOLD" "$running_label" "$RESET" >&2
+  fi
+  print_log_tail "$log_file"
+  return "$status"
+}
+
 cancel_release() {
   CANCELED=1
   exit 0
@@ -83,6 +164,14 @@ cleanup_and_finish() {
   for file in "${TEMP_FILES[@]:-}"; do
     [[ -n "$file" ]] && rm -f "$file"
   done
+
+  if [[ -n "$LOG_DIR" ]]; then
+    if [[ "$status" == 0 || "$CANCELED" == 1 ]]; then
+      rm -rf "$LOG_DIR"
+    else
+      printf '%sRelease logs: %s%s\n' "$MUTED" "$LOG_DIR" "$RESET" >&2
+    fi
+  fi
 
   if [[ "$TASK_STARTED" == 1 ]]; then
     if [[ "$CANCELED" == 1 ]]; then
@@ -117,6 +206,8 @@ Options:
   5. 生成干净 zip（无 ._* / .DS_Store）
   6. 创建 annotated tag、推送 main/tag、创建 GitHub Release
   7. 校验上传 asset，并更新 dist/.last_tag 与 dist/.last_asset
+
+正常发布时会隐藏底层命令日志，只显示当前步骤和加载动画；失败时会打印对应日志尾部。
 EOF
 }
 
@@ -324,9 +415,7 @@ if [[ -n "$NOTES_FILE" && ! -f "$NOTES_FILE" ]]; then
   exit 1
 fi
 
-step "Querying git tags"
-run git fetch origin --tags --prune --prune-tags
-step "Tag query completed"
+run_progress "同步标签中" "标签已同步" git fetch origin --tags --prune --prune-tags
 
 if [[ -n "$TAG" ]] && tag_exists "$TAG"; then
   echo "tag 或 release 已存在：$TAG" >&2
@@ -375,8 +464,7 @@ confirm "确认开始构建并发布 ${TAG}？" || {
   cancel_release
 }
 
-step "Archive app"
-run xcodebuild \
+run_progress "编译中" "编译完成" xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
@@ -391,14 +479,12 @@ if [[ "$DRY_RUN" != 1 && ! -d "$app_path" ]]; then
   exit 1
 fi
 
-step "Sign and verify app"
-run codesign --force --deep --sign - "$app_path"
-run codesign --verify --deep --strict --verbose=2 "$app_path"
+run_progress "签名中" "签名完成" codesign --force --deep --sign - "$app_path"
+run_progress "签名校验中" "签名校验完成" codesign --verify --deep --strict --verbose=2 "$app_path"
 
-step "Package release zip"
 run mkdir -p dist
 run rm -f "$asset_path"
-run ditto --norsrc -c -k --keepParent "$app_path" "$asset_path"
+run_progress "打包中" "打包完成" ditto --norsrc -c -k --keepParent "$app_path" "$asset_path"
 
 if [[ "$DRY_RUN" != 1 ]]; then
   if unzip -l "$asset_path" | grep -qE '(^|/)\._|\.DS_Store'; then
@@ -429,28 +515,29 @@ confirm "确认创建 tag、推送并发布 GitHub Release？" || {
   cancel_release
 }
 
-step "Create tag and publish GitHub Release"
-run git tag -a "$TAG" -m "CodexAppBar $TAG"
-run git push origin "$current_branch"
-run git push origin "$TAG"
+run_progress "创建 tag 中" "tag 已创建" git tag -a "$TAG" -m "CodexAppBar $TAG"
+run_progress "推送 main 中" "main 已推送" git push origin "$current_branch"
+run_progress "推送 tag 中" "tag 已推送" git push origin "$TAG"
 
-run gh release create "$TAG" "$asset_path" \
+run_progress "发布 GitHub Release 中" "GitHub Release 已发布" gh release create "$TAG" "$asset_path" \
   --repo "$REPO" \
   --title "CodexAppBar $TAG" \
   --notes-file "$notes_tmp" \
   --latest
 
+release_url=""
+asset_url=""
 if [[ "$DRY_RUN" != 1 ]]; then
   remote_digest="$(gh release view "$TAG" --repo "$REPO" --json assets --jq ".assets[] | select(.name == \"${asset_name}\") | .digest" 2>/dev/null || true)"
   if [[ -n "$remote_digest" && "$remote_digest" != "sha256:${sha256}" ]]; then
     echo "远端 asset SHA 不一致：${remote_digest} != sha256:${sha256}" >&2
     exit 1
   fi
-  gh release view "$TAG" --repo "$REPO"
+  release_url="$(gh release view "$TAG" --repo "$REPO" --json url --jq '.url' 2>/dev/null || true)"
+  asset_url="$(gh release view "$TAG" --repo "$REPO" --json assets --jq ".assets[] | select(.name == \"${asset_name}\") | .url" 2>/dev/null || true)"
 fi
 
-step "Sync local release metadata"
-run git fetch --tags --prune --prune-tags
+run_progress "同步本地标签中" "本地标签已同步" git fetch --tags --prune --prune-tags
 if [[ "$DRY_RUN" != 1 ]]; then
   printf '%s\n' "$TAG" > dist/.last_tag
   printf '%s\n' "$asset_name" > dist/.last_asset
@@ -458,5 +545,11 @@ fi
 
 echo
 echo "发布完成：${TAG}"
+if [[ -n "${release_url:-}" ]]; then
+  echo "Release：${release_url}"
+fi
+if [[ -n "${asset_url:-}" ]]; then
+  echo "GitHub 包：${asset_url}"
+fi
 echo "产物：${asset_path}"
 echo "SHA-256：${sha256}"
