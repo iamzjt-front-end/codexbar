@@ -299,6 +299,98 @@ struct CodexRadarView: View {
     }
 }
 
+struct CodexResetWindowTipView: View {
+    @EnvironmentObject var language: LanguageSettings
+    @ObservedObject private var radar = CodexRadarService.shared
+    private let infoAccent = Color(red: 0.12, green: 0.33, blue: 0.82)
+
+    var body: some View {
+        let _ = language.identity
+
+        if let resetWindow {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(infoAccent)
+                    .frame(width: 17, height: 17)
+                    .background(
+                        Circle()
+                            .fill(infoAccent.opacity(0.12))
+                    )
+
+                tipText(for: resetWindow)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+                    .monospacedDigit()
+
+                Spacer(minLength: 6)
+
+                Button {
+                    NSWorkspace.shared.open(resetWindow.sourceURL ?? radar.homepageURL)
+                } label: {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.borderless)
+                .focusable(false)
+                .foregroundColor(infoAccent)
+                .help(L.codexResetWindowSourceHelp)
+                .accessibilityLabel(L.codexResetWindowSourceHelp)
+            }
+            .frame(height: 31)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(infoAccent.opacity(0.075))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(infoAccent.opacity(0.14), lineWidth: 0.8)
+                    )
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+            .help(resetWindow.message ?? L.codexResetWindowFallback)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    private var resetWindow: CodexRadarResetWindow? {
+        guard let snapshot = radar.snapshot,
+              let window = snapshot.window,
+              window.isOpen || snapshot.windowOpen == true || snapshot.status?.lowercased() == "open" else {
+            return nil
+        }
+        return window
+    }
+
+    private func tipText(for window: CodexRadarResetWindow) -> Text {
+        guard let expectedResetAt = window.expectedResetAt else {
+            return Text(L.codexResetWindowTitle)
+                .foregroundColor(.primary)
+                + Text(L.codexResetWindowSeparator)
+                .foregroundColor(.secondary)
+                + Text(L.codexResetWindowFallback)
+                .foregroundColor(.primary)
+        }
+        return Text(L.codexResetWindowTitle)
+            .foregroundColor(.primary)
+            + Text(L.codexResetWindowSeparator)
+            .foregroundColor(.secondary)
+            + Text(L.codexResetWindowResetAt(formattedResetDate(expectedResetAt)))
+            .foregroundColor(.primary)
+    }
+
+    private func formattedResetDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = L.zh ? "M/d HH:mm" : "MMM d HH:mm"
+        return formatter.string(from: date)
+    }
+}
+
 private struct RadarComparisonItem {
     let id: String
     let label: String

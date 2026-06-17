@@ -154,6 +154,8 @@ struct MenuBarView: View {
             .padding(.vertical, 8)
             .animation(.easeInOut(duration: 0.16), value: refreshStatusText)
 
+            CodexResetWindowTipView()
+
             Divider()
 
             CodexRadarView()

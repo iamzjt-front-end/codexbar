@@ -107,10 +107,18 @@ private enum DateFormatters {
 struct CodexRadarSnapshot: Decodable {
     let monitoredAt: Date?
     let monitoredAtRaw: String?
+    let windowOpen: Bool?
+    let status: String?
+    let recommendedAction: String?
+    let window: CodexRadarResetWindow?
     let modelIQ: CodexRadarModelIQ?
 
     enum CodingKeys: String, CodingKey {
         case monitoredAt = "monitored_at"
+        case windowOpen = "window_open"
+        case status
+        case recommendedAction = "recommended_action"
+        case window
         case modelIQ = "model_iq"
     }
 
@@ -118,7 +126,63 @@ struct CodexRadarSnapshot: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         monitoredAt = try container.decodeIfPresent(Date.self, forKey: .monitoredAt)
         monitoredAtRaw = try container.decodeIfPresent(String.self, forKey: .monitoredAt)
+        windowOpen = try container.decodeIfPresent(Bool.self, forKey: .windowOpen)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        recommendedAction = try container.decodeIfPresent(String.self, forKey: .recommendedAction)
+        window = try container.decodeIfPresent(CodexRadarResetWindow.self, forKey: .window)
         modelIQ = try container.decodeIfPresent(CodexRadarModelIQ.self, forKey: .modelIQ)
+    }
+}
+
+struct CodexRadarResetWindow: Decodable {
+    let open: Bool?
+    let status: String?
+    let action: String?
+    let message: String?
+    let title: String?
+    let scope: String?
+    let openedAt: Date?
+    let closedAt: Date?
+    let sourceURL: URL?
+
+    enum CodingKeys: String, CodingKey {
+        case open
+        case status
+        case action
+        case message
+        case title
+        case scope
+        case openedAt = "opened_at"
+        case closedAt = "closed_at"
+        case sourceURL = "source_url"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        open = try container.decodeIfPresent(Bool.self, forKey: .open)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        action = try container.decodeIfPresent(String.self, forKey: .action)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        scope = try container.decodeIfPresent(String.self, forKey: .scope)
+        openedAt = try container.decodeIfPresent(Date.self, forKey: .openedAt)
+        closedAt = try container.decodeIfPresent(Date.self, forKey: .closedAt)
+
+        if let rawSourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL) {
+            sourceURL = URL(string: rawSourceURL)
+        } else {
+            sourceURL = nil
+        }
+    }
+
+    var isOpen: Bool {
+        if let open { return open }
+        return status?.lowercased() == "open"
+    }
+
+    var expectedResetAt: Date? {
+        if let closedAt { return closedAt }
+        return openedAt?.addingTimeInterval(24 * 60 * 60)
     }
 }
 
