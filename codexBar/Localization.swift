@@ -285,12 +285,10 @@ enum L {
     static var heatmapMore: String { zh ? "多" : "More" }
 
     // MARK: - CodexRadar
-    static var codexResetWindowTitle: String { zh ? "官方重置窗口" : "Reset window" }
-    static var codexResetWindowSeparator: String { zh ? "：" : ": " }
-    static func codexResetWindowResetAt(_ resetTime: String) -> String {
-        zh ? "Codex 限额预计 \(resetTime) 恢复" : "Codex limits reset around \(resetTime)"
+    static func codexResetWindowOpen(_ resetTime: String) -> String {
+        zh ? "速蹬窗口已开启，预计于 \(resetTime) 重置" : "Reset window is open, expected at \(resetTime)"
     }
-    static var codexResetWindowFallback: String { zh ? "Codex 限额即将恢复" : "Codex limits reset soon" }
+    static var codexResetWindowFallback: String { zh ? "速蹬窗口已开启" : "Reset window is open" }
     static var codexResetWindowSourceHelp: String { zh ? "打开官方证据" : "Open official source" }
     static var modelQualityTitle: String { zh ? "模型质量" : "Model Quality" }
     static var modelQualityRefreshHelp: String { zh ? "刷新模型质量" : "Refresh model quality" }

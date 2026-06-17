@@ -367,18 +367,10 @@ struct CodexResetWindowTipView: View {
 
     private func tipText(for window: CodexRadarResetWindow) -> Text {
         guard let expectedResetAt = window.expectedResetAt else {
-            return Text(L.codexResetWindowTitle)
-                .foregroundColor(.primary)
-                + Text(L.codexResetWindowSeparator)
-                .foregroundColor(.secondary)
-                + Text(L.codexResetWindowFallback)
+            return Text(L.codexResetWindowFallback)
                 .foregroundColor(.primary)
         }
-        return Text(L.codexResetWindowTitle)
-            .foregroundColor(.primary)
-            + Text(L.codexResetWindowSeparator)
-            .foregroundColor(.secondary)
-            + Text(L.codexResetWindowResetAt(formattedResetDate(expectedResetAt)))
+        return Text(L.codexResetWindowOpen(formattedResetDate(expectedResetAt)))
             .foregroundColor(.primary)
     }
 
