@@ -38,6 +38,7 @@ final class AppUpdateService: ObservableObject {
     @Published private(set) var latestRelease: AppUpdateRelease?
 
     private static let latestReleaseURL = URL(string: "https://api.github.com/repos/iamzjt-front-end/codexbar/releases/latest")!
+    private static let releasesAtomURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases.atom")!
     private static let latestReleasePageURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases/latest")!
     private static let githubBaseURL = URL(string: "https://github.com")!
     private let defaults = UserDefaults.standard
@@ -187,6 +188,42 @@ final class AppUpdateService: ObservableObject {
     }
 
     private func fetchLatestReleaseFromWeb() async throws -> GitHubReleaseResponse {
+        do {
+            return try await fetchLatestReleaseFromAtom()
+        } catch {
+            return try await fetchLatestReleaseFromLatestPage()
+        }
+    }
+
+    private func fetchLatestReleaseFromAtom() async throws -> GitHubReleaseResponse {
+        var request = URLRequest(url: Self.releasesAtomURL)
+        request.timeoutInterval = 20
+        request.setValue("CodexAppBar/\(currentBundleVersion)", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode),
+              let xml = String(data: data, encoding: .utf8),
+              let href = Self.firstMatch(
+                in: xml,
+                pattern: #"<link rel="alternate"[^>]+href="([^"]+/releases/tag/[^"]+)""#
+              ),
+              let htmlURL = URL(string: href),
+              let tagName = Self.releaseTagName(from: htmlURL) else {
+            throw AppUpdateError.invalidReleaseResponse
+        }
+
+        let asset = try await fetchInstallableAssetFromWeb(tagName: tagName)
+        return GitHubReleaseResponse(
+            tagName: tagName,
+            name: "CodexAppBar \(tagName)",
+            htmlURL: htmlURL,
+            publishedAt: nil,
+            assets: [asset]
+        )
+    }
+
+    private func fetchLatestReleaseFromLatestPage() async throws -> GitHubReleaseResponse {
         var latestRequest = URLRequest(url: Self.latestReleasePageURL)
         latestRequest.timeoutInterval = 20
         latestRequest.setValue("CodexAppBar/\(currentBundleVersion)", forHTTPHeaderField: "User-Agent")
