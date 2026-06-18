@@ -23,7 +23,9 @@ struct TokenStatsView: View {
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
                 if service.loading {
-                    ProgressView().controlSize(.mini).scaleEffect(0.5)
+                    ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: 10, height: 10)
                 }
                 Spacer()
                 Text(L.tokenThreadCount(service.stat.threadCount))

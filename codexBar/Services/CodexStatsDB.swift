@@ -30,31 +30,64 @@ struct CodexStatsDB {
         ]
     }
 
-    nonisolated private static func readFromFirstAvailableDB<T>(_ read: (OpaquePointer) -> T?) -> T? {
-        for path in dbPaths where FileManager.default.fileExists(atPath: path) {
-            var db: OpaquePointer?
-            // 只读 + URI，WAL 库并发读安全
-            let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-            let uri = "file:\(encodedPath)?mode=ro&immutable=0"
-            guard sqlite3_open_v2(uri, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK,
-                  let openedDB = db else {
-                if let db { sqlite3_close(db) }
-                continue
-            }
-            defer { sqlite3_close(openedDB) }
+    nonisolated private static func openReadOnlyDB(at path: String) -> OpaquePointer? {
+        var db: OpaquePointer?
+        // 只读 + URI，WAL 库并发读安全
+        let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        let uri = "file:\(encodedPath)?mode=ro&immutable=0"
+        guard sqlite3_open_v2(uri, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK,
+              let openedDB = db else {
+            if let db { sqlite3_close(db) }
+            return nil
+        }
 
-            // 忙等 2s，避免 codex 写时短暂冲突直接失败
-            sqlite3_busy_timeout(openedDB, 2000)
-            if let result = read(openedDB) {
-                return result
+        // 忙等 2s，避免 codex 写时短暂冲突直接失败
+        sqlite3_busy_timeout(openedDB, 2000)
+        return openedDB
+    }
+
+    nonisolated private static func latestThreadUpdatedAt(in db: OpaquePointer) -> Int64? {
+        let sql = "SELECT MAX(updated_at) FROM threads;"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              sqlite3_column_type(stmt, 0) != SQLITE_NULL else {
+            return nil
+        }
+        return sqlite3_column_int64(stmt, 0)
+    }
+
+    nonisolated private static func readFromCurrentDB<T>(_ read: (OpaquePointer) -> T?) -> T? {
+        let candidatePaths = dbPaths.filter { FileManager.default.fileExists(atPath: $0) }
+        var selectedPath: String?
+        var selectedUpdatedAt: Int64 = .min
+
+        for path in candidatePaths {
+            guard let db = openReadOnlyDB(at: path) else { continue }
+            let updatedAt = latestThreadUpdatedAt(in: db)
+            sqlite3_close(db)
+
+            guard let updatedAt else { continue }
+            if selectedPath == nil || updatedAt > selectedUpdatedAt {
+                selectedPath = path
+                selectedUpdatedAt = updatedAt
             }
         }
-        return nil
+
+        guard let path = selectedPath,
+              let db = openReadOnlyDB(at: path) else {
+            return nil
+        }
+        defer { sqlite3_close(db) }
+
+        return read(db)
     }
 
     /// 查询 updated_at ≥ since 的 thread 数与累计 token 之和。
     nonisolated static func stat(since: Date) -> WindowStat {
-        readFromFirstAvailableDB { db in
+        readFromCurrentDB { db in
             var result = WindowStat()
             let sql = "SELECT COUNT(*), COALESCE(SUM(tokens_used), 0) FROM threads WHERE updated_at >= ?;"
             var stmt: OpaquePointer?
@@ -73,7 +106,7 @@ struct CodexStatsDB {
     /// 每日 token 用量（updated_at ≥ since），key = 当地时区的 "yyyy-MM-dd"。
     /// 用于 GitHub 风格贡献热力图。
     nonisolated static func dailyTokens(since: Date) -> [String: Int] {
-        readFromFirstAvailableDB { db in
+        readFromCurrentDB { db in
             var out: [String: Int] = [:]
             // SQLite 直接按本地时区分组成日期串
             let sql = """
@@ -95,7 +128,7 @@ struct CodexStatsDB {
 
     /// 按 model 分组的 token 用量（updated_at ≥ since），降序，最多 limit 条。
     nonisolated static func byModel(since: Date, limit: Int = 5) -> [(model: String, tokens: Int)] {
-        readFromFirstAvailableDB { db in
+        readFromCurrentDB { db in
             var rows: [(String, Int)] = []
             let sql = """
             SELECT COALESCE(NULLIF(model, ''), model_provider) m, SUM(tokens_used) t
