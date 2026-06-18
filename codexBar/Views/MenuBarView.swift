@@ -701,6 +701,8 @@ private struct AppUpdateRow: View {
             return "arrow.down.circle.fill"
         case .downloading:
             return "arrow.down.circle"
+        case .readyToInstall:
+            return "checkmark.circle.fill"
         case .installing:
             return "shippingbox.circle.fill"
         case .upToDate:
@@ -718,7 +720,7 @@ private struct AppUpdateRow: View {
             return CodexStatusPalette.warning
         case .downloading, .checking, .installing:
             return .secondary
-        case .upToDate:
+        case .readyToInstall, .upToDate:
             return CodexStatusPalette.ok
         case .failed:
             return CodexStatusPalette.warning
@@ -735,6 +737,8 @@ private struct AppUpdateRow: View {
             return L.updateAvailableTitle(release.tagName)
         case .downloading:
             return L.updateDownloading
+        case .readyToInstall:
+            return L.updateReadyToInstall
         case .installing:
             return L.updateInstalling
         case .upToDate:
@@ -752,6 +756,8 @@ private struct AppUpdateRow: View {
             return L.updateAvailableDetail(release.displayName, formattedSize(release.assetSize))
         case .downloading(let release):
             return L.updateDownloadingDetail(Int(updater.downloadProgress * 100), formattedSize(release.assetSize))
+        case .readyToInstall(let release):
+            return L.updateReadyToInstallDetail(release.displayName)
         case .installing:
             return L.updateInstallingDetail
         case .failed(let message):
@@ -820,7 +826,7 @@ private struct AppUpdateRow: View {
 
     private var showsPrimaryButton: Bool {
         switch updater.state {
-        case .available, .failed:
+        case .available, .readyToInstall, .failed:
             return true
         case .idle, .checking, .upToDate, .downloading, .installing:
             return false
@@ -831,18 +837,27 @@ private struct AppUpdateRow: View {
         if case .failed = updater.state {
             return L.retry
         }
-        return L.updateNow
+        if case .readyToInstall = updater.state {
+            return L.installUpdateNow
+        }
+        return L.downloadUpdate
     }
 
     private var primaryButtonBackground: Color {
         if case .available = updater.state {
             return CodexStatusPalette.warning
         }
+        if case .readyToInstall = updater.state {
+            return CodexStatusPalette.ok
+        }
         return CodexStatusPalette.warning.opacity(0.16)
     }
 
     private var primaryButtonForeground: Color {
         if case .available = updater.state {
+            return .white
+        }
+        if case .readyToInstall = updater.state {
             return .white
         }
         return CodexStatusPalette.warning
@@ -852,21 +867,36 @@ private struct AppUpdateRow: View {
         if case .available = updater.state {
             return CodexStatusPalette.warning.opacity(0.45)
         }
+        if case .readyToInstall = updater.state {
+            return CodexStatusPalette.ok.opacity(0.45)
+        }
         return CodexStatusPalette.warning.opacity(0.28)
     }
 
     private func primaryAction() {
-        if case .available = updater.state {
-            let alert = NSAlert()
-            alert.messageText = L.updateConfirmTitle
-            alert.informativeText = L.updateConfirmInfo
-            alert.addButton(withTitle: L.updateConfirmButton)
-            alert.addButton(withTitle: L.cancel)
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if case .readyToInstall = updater.state {
+            confirmInstall()
+            return
         }
 
-        Task {
-            await updater.downloadAndInstallLatest()
+        Task { @MainActor in
+            await updater.downloadLatest()
+            if updater.hasReadyUpdate {
+                confirmInstall()
+            }
+        }
+    }
+
+    private func confirmInstall() {
+        let alert = NSAlert()
+        alert.messageText = L.updateInstallConfirmTitle
+        alert.informativeText = L.updateInstallConfirmInfo
+        alert.addButton(withTitle: L.updateInstallConfirmButton)
+        alert.addButton(withTitle: L.later)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        Task { @MainActor in
+            await updater.installDownloadedUpdate()
         }
     }
 

@@ -206,10 +206,12 @@ enum L {
     }
     static var forceQuitAndReopen: String { zh ? "强制退出并重新打开" : "Force Quit & Reopen" }
     static var forceQuitOnly: String    { zh ? "仅强制退出" : "Force Quit Only" }
+    static var later: String            { zh ? "稍后" : "Later" }
     static var restartLater: String     { zh ? "稍后手动重启" : "Later" }
     static var checkForUpdates: String  { zh ? "检查更新" : "Check for Updates" }
     static var retry: String            { zh ? "重试" : "Retry" }
-    static var updateNow: String        { zh ? "更新" : "Update" }
+    static var downloadUpdate: String   { zh ? "下载" : "Download" }
+    static var installUpdateNow: String { zh ? "现在更新" : "Update Now" }
     static var updateChecking: String   { zh ? "正在检查更新" : "Checking for updates" }
     static var updateCheckingDetail: String {
         zh ? "正在读取 GitHub 最新 release。" : "Reading the latest GitHub release."
@@ -218,25 +220,29 @@ enum L {
         zh ? "发现新版本 \(version)" : "Update available \(version)"
     }
     static func updateAvailableDetail(_ name: String, _ size: String) -> String {
-        zh ? "\(name) · \(size)，点击后会自动下载并重启更新。" : "\(name) · \(size). Click to download and relaunch."
+        zh ? "\(name) · \(size)，点击后先下载，下载完成后再确认是否安装。" : "\(name) · \(size). Download first, then choose whether to install."
     }
     static var updateDownloading: String { zh ? "正在下载更新" : "Downloading update" }
     static func updateDownloadingDetail(_ percent: Int, _ size: String) -> String {
         zh ? "\(percent)% · \(size)" : "\(percent)% · \(size)"
     }
+    static var updateReadyToInstall: String { zh ? "更新已下载" : "Update downloaded" }
+    static func updateReadyToInstallDetail(_ name: String) -> String {
+        zh ? "\(name) 已准备好。现在更新会退出并重新打开 CodexAppBar。" : "\(name) is ready. Updating now will quit and reopen CodexAppBar."
+    }
     static var updateInstalling: String { zh ? "正在安装更新" : "Installing update" }
     static var updateInstallingDetail: String {
         zh ? "CodexAppBar 将自动退出并重新打开。" : "CodexAppBar will quit and reopen automatically."
     }
-    static var updateConfirmTitle: String {
-        zh ? "更新 CodexAppBar？" : "Update CodexAppBar?"
+    static var updateInstallConfirmTitle: String {
+        zh ? "现在安装更新？" : "Install update now?"
     }
-    static var updateConfirmInfo: String {
+    static var updateInstallConfirmInfo: String {
         zh
-            ? "更新需要下载新版本、退出当前 CodexAppBar，替换 App 后会自动重新打开。是否继续？"
-            : "The update will download the new version, quit CodexAppBar, replace the app, and reopen automatically. Continue?"
+            ? "下载已完成。安装会退出当前 CodexAppBar，替换 App 后自动重新打开。"
+            : "The download is complete. Installing will quit CodexAppBar, replace the app, and reopen automatically."
     }
-    static var updateConfirmButton: String { zh ? "下载并更新" : "Download & Update" }
+    static var updateInstallConfirmButton: String { zh ? "安装并重启" : "Install & Relaunch" }
     static var updateUpToDate: String { zh ? "已是最新版本" : "Already up to date" }
     static var updateUpToDateDetail: String {
         zh ? "当前安装版本已匹配 GitHub 最新 release。" : "The installed build matches the latest GitHub release."

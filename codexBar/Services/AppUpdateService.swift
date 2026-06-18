@@ -31,6 +31,7 @@ enum AppUpdateState: Equatable {
     case upToDate
     case available(AppUpdateRelease)
     case downloading(AppUpdateRelease)
+    case readyToInstall(AppUpdateRelease)
     case installing(AppUpdateRelease)
     case failed(String)
 }
@@ -55,6 +56,7 @@ final class AppUpdateService: ObservableObject {
     private var activeDownloadTask: URLSessionDownloadTask?
     private var downloadObservation: NSKeyValueObservation?
     private var clearTransientTask: Task<Void, Never>?
+    private var stagedUpdate: (release: AppUpdateRelease, appURL: URL)?
     private var hasStarted = false
 
     private init() {}
@@ -63,7 +65,7 @@ final class AppUpdateService: ObservableObject {
         switch state {
         case .idle:
             return false
-        case .checking, .upToDate, .available, .downloading, .installing, .failed:
+        case .checking, .upToDate, .available, .downloading, .readyToInstall, .installing, .failed:
             return true
         }
     }
@@ -72,13 +74,19 @@ final class AppUpdateService: ObservableObject {
         switch state {
         case .checking, .downloading, .installing:
             return true
-        case .idle, .upToDate, .available, .failed:
+        case .idle, .upToDate, .available, .readyToInstall, .failed:
             return false
         }
     }
 
     var hasAvailableUpdate: Bool {
         if case .available = state { return true }
+        if case .readyToInstall = state { return true }
+        return false
+    }
+
+    var hasReadyUpdate: Bool {
+        if case .readyToInstall = state { return true }
         return false
     }
 
@@ -101,6 +109,7 @@ final class AppUpdateService: ObservableObject {
 
     func checkForUpdates(silent: Bool) async {
         guard !isWorking else { return }
+        if case .readyToInstall = state { return }
         clearTransientTask?.cancel()
         if !silent {
             state = .checking
@@ -114,16 +123,22 @@ final class AppUpdateService: ObservableObject {
 
             latestRelease = release
             if Self.isRelease(release.tagName, newerThanBundleBuild: currentBundleVersion) {
+                if let stagedUpdate, stagedUpdate.release.tagName == release.tagName {
+                    state = .readyToInstall(release)
+                    return
+                }
                 state = .available(release)
                 notifyIfNeeded(for: release)
             } else if silent {
                 switch state {
                 case .available, .failed, .upToDate:
+                    stagedUpdate = nil
                     state = .idle
-                case .idle, .checking, .downloading, .installing:
+                case .idle, .checking, .downloading, .readyToInstall, .installing:
                     break
                 }
             } else {
+                stagedUpdate = nil
                 state = .upToDate
                 clearTransientStatusLater()
             }
@@ -133,7 +148,7 @@ final class AppUpdateService: ObservableObject {
         }
     }
 
-    func downloadAndInstallLatest() async {
+    func downloadLatest() async {
         guard !isWorking else { return }
 
         let release: AppUpdateRelease
@@ -148,6 +163,7 @@ final class AppUpdateService: ObservableObject {
         do {
             clearTransientTask?.cancel()
             downloadProgress = 0
+            stagedUpdate = nil
             state = .downloading(release)
 
             let archiveURL = try await downloadArchive(for: release)
@@ -156,15 +172,33 @@ final class AppUpdateService: ObservableObject {
             let stagedAppURL = try stageApp(from: archiveURL)
             try verifyStagedApp(stagedAppURL, expectedRelease: release)
 
-            state = .installing(release)
-            try launchInstaller(for: stagedAppURL)
-            rememberPendingInstall(for: release)
-            NSApplication.shared.terminate(nil)
+            downloadProgress = 1
+            stagedUpdate = (release: release, appURL: stagedAppURL)
+            state = .readyToInstall(release)
         } catch {
             activeDownloadTask?.cancel()
             activeDownloadTask = nil
             downloadObservation?.invalidate()
             downloadObservation = nil
+            stagedUpdate = nil
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    func installDownloadedUpdate() async {
+        guard !isWorking else { return }
+        guard let stagedUpdate else {
+            await downloadLatest()
+            return
+        }
+
+        do {
+            clearTransientTask?.cancel()
+            state = .installing(stagedUpdate.release)
+            try launchInstaller(for: stagedUpdate.appURL)
+            rememberPendingInstall(for: stagedUpdate.release)
+            NSApplication.shared.terminate(nil)
+        } catch {
             state = .failed(error.localizedDescription)
         }
     }
@@ -178,7 +212,7 @@ final class AppUpdateService: ObservableObject {
 
     private var availableRelease: AppUpdateRelease? {
         switch state {
-        case .available(let release), .downloading(let release), .installing(let release):
+        case .available(let release), .downloading(let release), .readyToInstall(let release), .installing(let release):
             return release
         case .idle, .checking, .upToDate, .failed:
             return latestRelease
