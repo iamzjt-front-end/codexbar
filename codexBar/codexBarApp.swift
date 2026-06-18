@@ -19,6 +19,7 @@ struct codexBarApp: App {
         CodexRadarService.shared.start()
         CodexSessionStatusService.shared.start()
         CodexHookInstallerService.shared.start()
+        AppUpdateService.shared.startPeriodicChecks()
         AppStatusBarController.shared.start(
             store: TokenStore.shared,
             oauth: OAuthManager.shared,
@@ -204,6 +205,7 @@ private final class AppStatusBarController: NSObject {
                 .environmentObject(quotaDisplay)
                 .environmentObject(codexSessionStatus)
                 .environmentObject(codexHookInstaller)
+                .environmentObject(AppUpdateService.shared)
         )
         self.popover = popover
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)

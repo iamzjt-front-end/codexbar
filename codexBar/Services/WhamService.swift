@@ -129,6 +129,7 @@ class WhamService {
         var primaryResetAt: Date? = nil
         var secondaryResetAt: Date? = nil
         var rateLimitResetCreditsAvailableCount: Int?
+        var rateLimitResetCreditsExpiresAt: Date?
 
         if let rateLimit = json["rate_limit"] as? [String: Any] {
 
@@ -152,6 +153,7 @@ class WhamService {
 
         if let resetCredits = json["rate_limit_reset_credits"] as? [String: Any] {
             rateLimitResetCreditsAvailableCount = Self.intValue(resetCredits["available_count"])
+            rateLimitResetCreditsExpiresAt = Self.resetCreditsExpirationDate(from: resetCredits)
         }
 
         return WhamUsageResult(
@@ -160,7 +162,8 @@ class WhamService {
             secondaryUsedPercent: secondaryUsedPercent,
             primaryResetAt: primaryResetAt,
             secondaryResetAt: secondaryResetAt,
-            rateLimitResetCreditsAvailableCount: rateLimitResetCreditsAvailableCount
+            rateLimitResetCreditsAvailableCount: rateLimitResetCreditsAvailableCount,
+            rateLimitResetCreditsExpiresAt: rateLimitResetCreditsExpiresAt
         )
     }
 
@@ -178,6 +181,11 @@ class WhamService {
         updated.primaryResetAt = nextPrimaryResetAt
         updated.secondaryResetAt = nextSecondaryResetAt
         updated.rateLimitResetCreditsAvailableCount = result.rateLimitResetCreditsAvailableCount
+        if let count = result.rateLimitResetCreditsAvailableCount, count > 0 {
+            updated.rateLimitResetCreditsExpiresAt = result.rateLimitResetCreditsExpiresAt ?? futureDate(account.rateLimitResetCreditsExpiresAt)
+        } else {
+            updated.rateLimitResetCreditsExpiresAt = nil
+        }
         updated.lastChecked = Date()
         if let orgName { updated.organizationName = orgName }
         return updated
@@ -194,6 +202,62 @@ class WhamService {
         if let string = value as? String { return Int(string) }
         return nil
     }
+
+    private static func resetCreditsExpirationDate(from resetCredits: [String: Any]) -> Date? {
+        let absoluteKeys = [
+            "expires_at",
+            "expire_at",
+            "expiration_at",
+            "expiresAt",
+            "valid_until",
+            "valid_through",
+            "validUntil"
+        ]
+        for key in absoluteKeys {
+            if let date = dateValue(resetCredits[key]) {
+                return date
+            }
+        }
+
+        let relativeKeys = [
+            "expires_after_seconds",
+            "expire_after_seconds",
+            "seconds_until_expiration",
+            "ttl_seconds"
+        ]
+        for key in relativeKeys {
+            if let seconds = doubleValue(resetCredits[key]), seconds > 0 {
+                return Date(timeIntervalSinceNow: seconds)
+            }
+        }
+
+        return nil
+    }
+
+    private static func dateValue(_ value: Any?) -> Date? {
+        if let date = value as? Date { return date }
+        if let timeInterval = doubleValue(value) {
+            let seconds = timeInterval > 10_000_000_000 ? timeInterval / 1000 : timeInterval
+            return Date(timeIntervalSince1970: seconds)
+        }
+        if let string = value as? String {
+            if let numeric = Double(string) {
+                let seconds = numeric > 10_000_000_000 ? numeric / 1000 : numeric
+                return Date(timeIntervalSince1970: seconds)
+            }
+            if let date = ISO8601DateFormatter().date(from: string) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        if let double = value as? Double { return double }
+        if let int = value as? Int { return Double(int) }
+        if let string = value as? String { return Double(string) }
+        return nil
+    }
 }
 
 struct WhamUsageResult {
@@ -203,6 +267,7 @@ struct WhamUsageResult {
     let primaryResetAt: Date?
     let secondaryResetAt: Date?
     let rateLimitResetCreditsAvailableCount: Int?
+    let rateLimitResetCreditsExpiresAt: Date?
 }
 
 enum WhamError: LocalizedError {

@@ -353,7 +353,8 @@ release_notes_from_git() {
   local range="$2"
   local asset_name="$3"
   local marketing_version="$4"
-  local sha256="$5"
+  local bundle_version="$5"
+  local sha256="$6"
   local changelog
 
   if [[ -n "$range" ]]; then
@@ -378,6 +379,7 @@ release_notes_from_git() {
     echo "## 构建信息"
     echo
     echo "- App 版本：${marketing_version}"
+    echo "- 构建号：${bundle_version}"
     echo "- 发布产物：${asset_name}"
     echo "- SHA-256：${sha256}"
   }
@@ -446,10 +448,15 @@ if [[ -z "$marketing_version" ]]; then
   exit 1
 fi
 
-date_suffix="$(date '+%Y%m%d')"
-if [[ "$TAG" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.([0-9]+)$ ]]; then
-  date_suffix="${date_suffix}.${BASH_REMATCH[1]}"
+if [[ "$TAG" =~ ^v([0-9]{4})\.([0-9]{2})\.([0-9]{2})(\.([0-9]+))?$ ]]; then
+  date_suffix="${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
+  if [[ -n "${BASH_REMATCH[5]:-}" ]]; then
+    date_suffix="${date_suffix}.${BASH_REMATCH[5]}"
+  fi
+else
+  date_suffix="$(date '+%Y%m%d')"
 fi
+bundle_version="$date_suffix"
 asset_name="codexAppBar-${marketing_version}-${date_suffix}-release.zip"
 asset_path="dist/${asset_name}"
 app_path="${ARCHIVE_PATH}/${APP_RELATIVE_PATH}"
@@ -458,6 +465,7 @@ print_box "Release target" "Repo:   $REPO
 Branch: $current_branch
 Tag:    $TAG
 Range:  ${release_range:-<all commits>}
+Build:  $bundle_version
 Asset:  $asset_path"
 
 confirm "确认开始构建并发布 ${TAG}？" || {
@@ -470,6 +478,7 @@ run_progress "编译中" "编译完成" xcodebuild \
   -configuration "$CONFIGURATION" \
   -archivePath "$ARCHIVE_PATH" \
   clean archive \
+  CURRENT_PROJECT_VERSION="$bundle_version" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGN_IDENTITY= \
   CODE_SIGNING_REQUIRED=NO
@@ -503,7 +512,7 @@ TEMP_FILES+=("$notes_tmp")
 if [[ -n "$NOTES_FILE" ]]; then
   cp "$NOTES_FILE" "$notes_tmp"
 else
-  release_notes_from_git "$last_release_tag" "$release_range" "$asset_name" "$marketing_version" "$sha256" > "$notes_tmp"
+  release_notes_from_git "$last_release_tag" "$release_range" "$asset_name" "$marketing_version" "$bundle_version" "$sha256" > "$notes_tmp"
 fi
 
 echo

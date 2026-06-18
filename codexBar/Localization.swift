@@ -152,8 +152,23 @@ enum L {
     static var resetCreditsUnknown: String { "--" }
     static var resetCreditsHelp: String {
         zh
-            ? "官方 banked Codex rate-limit reset 次数；邀请奖励到账后会增加。"
-            : "Official banked Codex rate-limit resets. Successful referral rewards add to this count."
+            ? "官方 banked Codex rate-limit reset 次数；当前接口通常只返回数量，若返回过期时间会在临近 3 天时提示。"
+            : "Official banked Codex rate-limit resets. The current endpoint usually returns only the count; if an expiration is returned, a 3-day warning appears."
+    }
+    static func resetCreditsExpireSoon(_ time: String) -> String {
+        zh ? "重置机会即将过期：\(time)" : "Reset credits expire soon: \(time)"
+    }
+    static var resetCreditsExpireSoonHelp: String {
+        zh ? "官方返回了重置机会过期时间，距离过期不足 3 天。" : "The official response includes a reset-credit expiration less than 3 days away."
+    }
+    static func resetCreditsExpireInMinutes(_ minutes: Int) -> String {
+        zh ? "\(minutes) 分钟内" : "in \(minutes) min"
+    }
+    static func resetCreditsExpireInHours(_ hours: Int) -> String {
+        zh ? "\(hours) 小时内" : "in \(hours) hr"
+    }
+    static func resetCreditsExpireInDays(_ days: Int) -> String {
+        zh ? "\(days) 天内" : "in \(days) day\(days == 1 ? "" : "s")"
     }
     static var addAccount: String      { zh ? "授权账号"            : "Authorize Account" }
     static var importAccount: String   { zh ? "导入账号 JSON"       : "Import Accounts JSON" }
@@ -192,6 +207,83 @@ enum L {
     static var forceQuitAndReopen: String { zh ? "强制退出并重新打开" : "Force Quit & Reopen" }
     static var forceQuitOnly: String    { zh ? "仅强制退出" : "Force Quit Only" }
     static var restartLater: String     { zh ? "稍后手动重启" : "Later" }
+    static var checkForUpdates: String  { zh ? "检查更新" : "Check for Updates" }
+    static var retry: String            { zh ? "重试" : "Retry" }
+    static var updateNow: String        { zh ? "更新" : "Update" }
+    static var updateChecking: String   { zh ? "正在检查更新" : "Checking for updates" }
+    static var updateCheckingDetail: String {
+        zh ? "正在读取 GitHub 最新 release。" : "Reading the latest GitHub release."
+    }
+    static func updateAvailableTitle(_ version: String) -> String {
+        zh ? "发现新版本 \(version)" : "Update available \(version)"
+    }
+    static func updateAvailableDetail(_ name: String, _ size: String) -> String {
+        zh ? "\(name) · \(size)，点击后会自动下载并重启更新。" : "\(name) · \(size). Click to download and relaunch."
+    }
+    static var updateDownloading: String { zh ? "正在下载更新" : "Downloading update" }
+    static func updateDownloadingDetail(_ percent: Int, _ size: String) -> String {
+        zh ? "\(percent)% · \(size)" : "\(percent)% · \(size)"
+    }
+    static var updateInstalling: String { zh ? "正在安装更新" : "Installing update" }
+    static var updateInstallingDetail: String {
+        zh ? "CodexAppBar 将自动退出并重新打开。" : "CodexAppBar will quit and reopen automatically."
+    }
+    static var updateConfirmTitle: String {
+        zh ? "更新 CodexAppBar？" : "Update CodexAppBar?"
+    }
+    static var updateConfirmInfo: String {
+        zh
+            ? "更新需要下载新版本、退出当前 CodexAppBar，替换 App 后会自动重新打开。是否继续？"
+            : "The update will download the new version, quit CodexAppBar, replace the app, and reopen automatically. Continue?"
+    }
+    static var updateConfirmButton: String { zh ? "下载并更新" : "Download & Update" }
+    static var updateUpToDate: String { zh ? "已是最新版本" : "Already up to date" }
+    static var updateUpToDateDetail: String {
+        zh ? "当前安装版本已匹配 GitHub 最新 release。" : "The installed build matches the latest GitHub release."
+    }
+    static var updateFailedTitle: String { zh ? "更新失败" : "Update failed" }
+    static var updateNotificationTitle: String {
+        zh ? "CodexAppBar 有新版本" : "CodexAppBar update available"
+    }
+    static func updateNotificationBody(_ name: String) -> String {
+        zh ? "\(name) 已发布，打开菜单即可更新。" : "\(name) is available. Open the menu to update."
+    }
+    static var updateErrorInvalidResponse: String {
+        zh ? "GitHub 返回内容不可识别" : "GitHub returned an unrecognized response"
+    }
+    static func updateErrorBadStatus(_ status: Int) -> String {
+        zh ? "GitHub 请求失败：HTTP \(status)" : "GitHub request failed: HTTP \(status)"
+    }
+    static var updateErrorNoAsset: String {
+        zh ? "最新 release 中没有可安装的 codexAppBar zip" : "The latest release has no installable codexAppBar zip"
+    }
+    static var updateErrorDownloadMissingFile: String {
+        zh ? "下载完成但找不到临时文件" : "Download finished but the temporary file is missing"
+    }
+    static var updateErrorDigestMismatch: String {
+        zh ? "下载包 SHA-256 校验不一致" : "Downloaded package SHA-256 did not match"
+    }
+    static var updateErrorAppNotFound: String {
+        zh ? "压缩包中没有找到 codexAppBar.app" : "Could not find codexAppBar.app in the archive"
+    }
+    static var updateErrorBundleIdentifierMismatch: String {
+        zh ? "下载的 App 标识与当前 App 不一致" : "Downloaded app identifier does not match this app"
+    }
+    static var updateErrorStagedVersionMismatch: String {
+        zh ? "下载的 App 版本号不匹配" : "Downloaded app build version does not match the release"
+    }
+    static var updateErrorTranslocated: String {
+        zh ? "当前 App 仍在 macOS 随机转移路径中运行，请先移动到 Applications 后再更新" : "The app is running from a macOS translocation path. Move it to Applications first."
+    }
+    static func updateErrorInstallLocationNotWritable(_ path: String) -> String {
+        zh ? "无法写入安装目录：\(path)" : "Cannot write to install location: \(path)"
+    }
+    static func updateErrorToolFailed(_ message: String) -> String {
+        zh ? "更新工具执行失败：\(message)" : "Update tool failed: \(message)"
+    }
+    static func updateErrorInstallerLaunchFailed(_ reason: String) -> String {
+        zh ? "无法启动安装器：\(reason)" : "Could not launch installer: \(reason)"
+    }
 
     static func available(_ n: Int, _ total: Int) -> String {
         zh ? "\(n)/\(total) 可用" : "\(n)/\(total) Available"

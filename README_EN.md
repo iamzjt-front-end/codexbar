@@ -66,6 +66,7 @@ CodexAppBar is a macOS menu bar companion for Codex users. It brings account man
 | Banked resets | Show banked Codex rate-limit reset count when the account exposes it. |
 | Local token usage | Read local Codex SQLite state to show today / week / month token usage, session count, and a 16-week heatmap. |
 | Global refresh | Refresh account tokens, quota usage, model quality, and local usage stats from the top-right refresh button. |
+| Auto update | Check GitHub Releases in the background, show update availability in the menu, download with progress, and relaunch automatically. |
 | Safer switching | Switch accounts without restarting Codex, or switch and restart Codex when you explicitly need immediate effect. |
 | Localization | Switch the popover UI between Chinese and English. |
 
@@ -77,6 +78,7 @@ Download the latest build from [GitHub Releases](https://github.com/iamzjt-front
 2. Unzip it and move `codexAppBar.app` to `Applications`.
 3. Launch the app. It will appear in the macOS menu bar.
 4. If macOS blocks the first launch, open it from Finder with right click -> Open, or allow it from System Settings.
+5. Future releases appear inside the CodexAppBar menu, where you can update directly and watch download progress.
 
 ## Requirements
 
@@ -148,6 +150,7 @@ CodexAppBar is designed to run locally, but it touches sensitive Codex authentic
 ## Release
 
 The repository includes a release helper that creates release notes, archives the app, applies ad-hoc signing, packages a zip, and publishes with GitHub CLI.
+It writes the release date into `CFBundleVersion` (for example `20260618` / `20260618.1`) so the app can compare the installed build with the latest GitHub Release.
 
 ```sh
 scripts/release.sh

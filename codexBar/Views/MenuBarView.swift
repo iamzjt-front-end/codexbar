@@ -11,6 +11,7 @@ struct MenuBarView: View {
     @EnvironmentObject var refreshFrequency: RefreshFrequencySettings
     @EnvironmentObject var quotaDisplay: QuotaDisplaySettings
     @EnvironmentObject var codexHookInstaller: CodexHookInstallerService
+    @EnvironmentObject var appUpdater: AppUpdateService
     @State private var isRefreshing = false
     @State private var showError: String?
     @State private var showSuccess: String?
@@ -155,6 +156,12 @@ struct MenuBarView: View {
             .animation(.easeInOut(duration: 0.16), value: refreshStatusText)
 
             CodexResetWindowTipView()
+
+            if appUpdater.shouldShowUpdateRow {
+                Divider()
+
+                AppUpdateRow(updater: appUpdater)
+            }
 
             Divider()
 
@@ -367,6 +374,23 @@ struct MenuBarView: View {
 
                 HStack(spacing: 8) {
                     Button {
+                        Task { await appUpdater.checkForUpdates(silent: false) }
+                    } label: {
+                        Image(systemName: appUpdater.hasAvailableUpdate ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
+                            .font(.system(size: 12))
+                            .frame(width: 18, height: 18, alignment: .center)
+                            .foregroundColor(appUpdater.hasAvailableUpdate ? CodexStatusPalette.warning : .primary)
+                            .background(
+                                Circle()
+                                    .fill(appUpdater.hasAvailableUpdate ? CodexStatusPalette.warning.opacity(0.16) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.borderless)
+                    .focusable(false)
+                    .disabled(appUpdater.isWorking)
+                    .help(L.checkForUpdates)
+
+                    Button {
                         language.cycle()
                     } label: {
                         Text(language.buttonLabel)
@@ -411,6 +435,7 @@ struct MenuBarView: View {
             store.markActiveAccount()
             codexHookInstaller.refresh()
             TokenStatsService.shared.refresh()
+            Task { await appUpdater.checkForUpdates(silent: true) }
         }
         .onDisappear {
             menuVisible = false
@@ -549,9 +574,11 @@ struct MenuBarView: View {
         refreshingAccounts.formUnion(accountIDs)
 
         async let radarRefresh: Void = CodexRadarService.shared.refresh()
+        async let updateCheck: Void = appUpdater.checkForUpdates(silent: true)
         await RefreshService.shared.refreshExpiring(store: store)
         await WhamService.shared.refreshAll(store: store)
         await radarRefresh
+        await updateCheck
         lastVisibleRefresh = Date()
         TokenStatsService.shared.refresh()
         isRefreshing = false
@@ -644,6 +671,191 @@ struct MenuBarView: View {
                 showError = error.localizedDescription
             }
         }
+    }
+}
+
+private struct AppUpdateRow: View {
+    @ObservedObject var updater: AppUpdateService
+
+    private var iconName: String {
+        switch updater.state {
+        case .checking:
+            return "arrow.triangle.2.circlepath"
+        case .available:
+            return "arrow.down.circle.fill"
+        case .downloading:
+            return "arrow.down.circle"
+        case .installing:
+            return "shippingbox.circle.fill"
+        case .upToDate:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        case .idle:
+            return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private var iconColor: Color {
+        switch updater.state {
+        case .available:
+            return CodexStatusPalette.warning
+        case .downloading, .checking, .installing:
+            return .secondary
+        case .upToDate:
+            return CodexStatusPalette.ok
+        case .failed:
+            return CodexStatusPalette.warning
+        case .idle:
+            return .secondary
+        }
+    }
+
+    private var title: String {
+        switch updater.state {
+        case .checking:
+            return L.updateChecking
+        case .available(let release):
+            return L.updateAvailableTitle(release.tagName)
+        case .downloading:
+            return L.updateDownloading
+        case .installing:
+            return L.updateInstalling
+        case .upToDate:
+            return L.updateUpToDate
+        case .failed:
+            return L.updateFailedTitle
+        case .idle:
+            return L.checkForUpdates
+        }
+    }
+
+    private var detail: String {
+        switch updater.state {
+        case .available(let release):
+            return L.updateAvailableDetail(release.displayName, formattedSize(release.assetSize))
+        case .downloading(let release):
+            return L.updateDownloadingDetail(Int(updater.downloadProgress * 100), formattedSize(release.assetSize))
+        case .installing:
+            return L.updateInstallingDetail
+        case .failed(let message):
+            return message
+        case .checking:
+            return L.updateCheckingDetail
+        case .upToDate:
+            return L.updateUpToDateDetail
+        case .idle:
+            return ""
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: iconName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(iconColor)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if case .downloading = updater.state {
+                    ProgressView(value: updater.downloadProgress)
+                        .controlSize(.small)
+                }
+            }
+
+            Spacer(minLength: 6)
+
+            if showsPrimaryButton {
+                Button(action: primaryAction) {
+                    Text(primaryButtonTitle)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(primaryButtonForeground)
+                        .padding(.horizontal, 8)
+                        .frame(height: 20, alignment: .center)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(primaryButtonBackground)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .strokeBorder(primaryButtonBorder, lineWidth: 0.8)
+                        )
+                }
+                .buttonStyle(.borderless)
+                .focusable(false)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+    }
+
+    private var showsPrimaryButton: Bool {
+        switch updater.state {
+        case .available, .failed:
+            return true
+        case .idle, .checking, .upToDate, .downloading, .installing:
+            return false
+        }
+    }
+
+    private var primaryButtonTitle: String {
+        if case .failed = updater.state {
+            return L.retry
+        }
+        return L.updateNow
+    }
+
+    private var primaryButtonBackground: Color {
+        if case .available = updater.state {
+            return CodexStatusPalette.warning
+        }
+        return CodexStatusPalette.warning.opacity(0.16)
+    }
+
+    private var primaryButtonForeground: Color {
+        if case .available = updater.state {
+            return .white
+        }
+        return CodexStatusPalette.warning
+    }
+
+    private var primaryButtonBorder: Color {
+        if case .available = updater.state {
+            return CodexStatusPalette.warning.opacity(0.45)
+        }
+        return CodexStatusPalette.warning.opacity(0.28)
+    }
+
+    private func primaryAction() {
+        if case .available = updater.state {
+            let alert = NSAlert()
+            alert.messageText = L.updateConfirmTitle
+            alert.informativeText = L.updateConfirmInfo
+            alert.addButton(withTitle: L.updateConfirmButton)
+            alert.addButton(withTitle: L.cancel)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        Task {
+            await updater.downloadAndInstallLatest()
+        }
+    }
+
+    private func formattedSize(_ size: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
 }
 

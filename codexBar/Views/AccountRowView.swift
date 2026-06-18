@@ -108,6 +108,10 @@ struct AccountRowView: View {
                 }
             }
 
+            if shouldShowResetCreditsExpirationWarning {
+                resetCreditsExpirationWarning
+            }
+
             // Line 2: usage info
             if account.tokenExpired {
                 HStack(spacing: 4) {
@@ -230,6 +234,55 @@ struct AccountRowView: View {
             return .secondary
         }
         return CodexStatusPalette.ok
+    }
+
+    private var shouldShowResetCreditsExpirationWarning: Bool {
+        guard let count = account.rateLimitResetCreditsAvailableCount,
+              count > 0,
+              let expiresAt = account.rateLimitResetCreditsExpiresAt else {
+            return false
+        }
+        let remaining = expiresAt.timeIntervalSince(now)
+        return remaining > 0 && remaining <= 3 * 24 * 60 * 60
+    }
+
+    private var resetCreditsExpirationWarning: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "clock.badge.exclamationmark.fill")
+                .font(.system(size: 10, weight: .semibold))
+            Text(L.resetCreditsExpireSoon(resetCreditsExpirationDescription))
+                .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 4)
+        }
+        .foregroundColor(CodexStatusPalette.warning)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(CodexStatusPalette.warning.opacity(0.14))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .strokeBorder(CodexStatusPalette.warning.opacity(0.24), lineWidth: 0.8)
+        )
+        .help(L.resetCreditsExpireSoonHelp)
+    }
+
+    private var resetCreditsExpirationDescription: String {
+        guard let expiresAt = account.rateLimitResetCreditsExpiresAt else { return "" }
+        let remaining = max(0, expiresAt.timeIntervalSince(now))
+        if remaining < 60 * 60 {
+            let minutes = max(1, Int(ceil(remaining / 60)))
+            return L.resetCreditsExpireInMinutes(minutes)
+        }
+        if remaining < 24 * 60 * 60 {
+            let hours = max(1, Int(ceil(remaining / 3600)))
+            return L.resetCreditsExpireInHours(hours)
+        }
+        let days = max(1, Int(ceil(remaining / (24 * 60 * 60))))
+        return L.resetCreditsExpireInDays(days)
     }
 
     private func usageColor(_ percent: Double) -> Color {
