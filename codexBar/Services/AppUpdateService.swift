@@ -38,6 +38,8 @@ final class AppUpdateService: ObservableObject {
     @Published private(set) var latestRelease: AppUpdateRelease?
 
     private static let latestReleaseURL = URL(string: "https://api.github.com/repos/iamzjt-front-end/codexbar/releases/latest")!
+    private static let latestReleasePageURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases/latest")!
+    private static let githubBaseURL = URL(string: "https://github.com")!
     private let defaults = UserDefaults.standard
     private var activeDownloadTask: URLSessionDownloadTask?
     private var downloadObservation: NSKeyValueObservation?
@@ -159,6 +161,14 @@ final class AppUpdateService: ObservableObject {
     }
 
     private func fetchLatestRelease() async throws -> GitHubReleaseResponse {
+        do {
+            return try await fetchLatestReleaseFromAPI()
+        } catch {
+            return try await fetchLatestReleaseFromWeb()
+        }
+    }
+
+    private func fetchLatestReleaseFromAPI() async throws -> GitHubReleaseResponse {
         var request = URLRequest(url: Self.latestReleaseURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("CodexAppBar/\(currentBundleVersion)", forHTTPHeaderField: "User-Agent")
@@ -174,6 +184,81 @@ final class AppUpdateService: ObservableObject {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(GitHubReleaseResponse.self, from: data)
+    }
+
+    private func fetchLatestReleaseFromWeb() async throws -> GitHubReleaseResponse {
+        var latestRequest = URLRequest(url: Self.latestReleasePageURL)
+        latestRequest.timeoutInterval = 20
+        latestRequest.setValue("CodexAppBar/\(currentBundleVersion)", forHTTPHeaderField: "User-Agent")
+
+        let (_, latestResponse) = try await URLSession.shared.data(for: latestRequest)
+        guard let httpResponse = latestResponse as? HTTPURLResponse,
+              (200..<400).contains(httpResponse.statusCode),
+              let finalURL = httpResponse.url,
+              let tagName = Self.releaseTagName(from: finalURL) else {
+            throw AppUpdateError.invalidReleaseResponse
+        }
+
+        let asset = try await fetchInstallableAssetFromWeb(tagName: tagName)
+        return GitHubReleaseResponse(
+            tagName: tagName,
+            name: "CodexAppBar \(tagName)",
+            htmlURL: finalURL,
+            publishedAt: nil,
+            assets: [asset]
+        )
+    }
+
+    private func fetchInstallableAssetFromWeb(tagName: String) async throws -> GitHubReleaseAsset {
+        let escapedTag = tagName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tagName
+        guard let assetsURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases/expanded_assets/\(escapedTag)") else {
+            throw AppUpdateError.invalidReleaseResponse
+        }
+
+        var request = URLRequest(url: assetsURL)
+        request.timeoutInterval = 20
+        request.setValue("CodexAppBar/\(currentBundleVersion)", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw AppUpdateError.invalidReleaseResponse
+        }
+
+        guard let href = Self.firstMatch(
+            in: html,
+            pattern: #"href="([^"]*/releases/download/[^"]*/codexAppBar-[^"]+\.zip)""#
+        ) else {
+            throw AppUpdateError.noInstallableAsset
+        }
+        guard let assetURL = URL(string: href, relativeTo: Self.githubBaseURL)?.absoluteURL else {
+            throw AppUpdateError.invalidReleaseResponse
+        }
+
+        let digest = Self.firstMatch(in: html, pattern: #"(sha256:[a-fA-F0-9]{64})"#)
+        let size = await fetchAssetSize(at: assetURL)
+        return GitHubReleaseAsset(
+            name: assetURL.lastPathComponent,
+            size: size,
+            browserDownloadURL: assetURL,
+            digest: digest
+        )
+    }
+
+    private func fetchAssetSize(at url: URL) async -> Int64 {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 20
+        request.setValue("CodexAppBar/\(currentBundleVersion)", forHTTPHeaderField: "User-Agent")
+
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              (200..<400).contains(httpResponse.statusCode),
+              httpResponse.expectedContentLength > 0 else {
+            return 0
+        }
+        return httpResponse.expectedContentLength
     }
 
     private func downloadArchive(for release: AppUpdateRelease) async throws -> URL {
@@ -471,6 +556,25 @@ final class AppUpdateService: ObservableObject {
             if left < right { return .orderedAscending }
         }
         return .orderedSame
+    }
+
+    private static func releaseTagName(from url: URL) -> String? {
+        let components = url.pathComponents
+        guard let tagIndex = components.firstIndex(of: "tag"),
+              components.indices.contains(tagIndex + 1) else {
+            return nil
+        }
+        let tagName = components[tagIndex + 1]
+        return tagName.isEmpty ? nil : tagName
+    }
+
+    private static func firstMatch(in text: String, pattern: String) -> String? {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = expression.firstMatch(in: text, range: range) else { return nil }
+        let captureIndex = match.numberOfRanges > 1 ? 1 : 0
+        guard let captureRange = Range(match.range(at: captureIndex), in: text) else { return nil }
+        return String(text[captureRange])
     }
 }
 
