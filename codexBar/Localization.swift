@@ -248,6 +248,21 @@ enum L {
     static func updateNotificationBody(_ name: String) -> String {
         zh ? "\(name) 已发布，打开菜单即可更新。" : "\(name) is available. Open the menu to update."
     }
+    static func updateInstalledTitle(_ version: String) -> String {
+        zh ? "已更新到 \(version)" : "Updated to \(version)"
+    }
+    static func updateInstalledDetail(_ currentVersion: String) -> String {
+        zh ? "当前运行版本：\(currentVersion)" : "Current running version: \(currentVersion)"
+    }
+    static var dismissUpdateInstalled: String {
+        zh ? "关闭更新完成提示" : "Dismiss update completed"
+    }
+    static var updateInstalledNotificationTitle: String {
+        zh ? "CodexAppBar 已更新" : "CodexAppBar updated"
+    }
+    static func updateInstalledNotificationBody(_ version: String) -> String {
+        zh ? "已成功更新到 \(version)。" : "Successfully updated to \(version)."
+    }
     static var updateErrorInvalidResponse: String {
         zh ? "GitHub 返回内容不可识别" : "GitHub returned an unrecognized response"
     }

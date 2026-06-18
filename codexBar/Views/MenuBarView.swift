@@ -95,8 +95,16 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 标题栏
             HStack {
-                Text("CodexAppBar")
-                    .font(.system(size: 13, weight: .semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("CodexAppBar")
+                        .font(.system(size: 13, weight: .semibold))
+
+                    Text(appUpdater.currentVersionDisplay)
+                        .font(.system(size: 9, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
 
                 if !store.accounts.isEmpty {
                     Text(L.available(availableCount, store.accounts.count))
@@ -156,6 +164,14 @@ struct MenuBarView: View {
             .animation(.easeInOut(duration: 0.16), value: refreshStatusText)
 
             CodexResetWindowTipView()
+
+            if let completion = appUpdater.completedUpdate {
+                Divider()
+
+                AppUpdateCompletedRow(completion: completion) {
+                    appUpdater.dismissCompletedUpdate()
+                }
+            }
 
             if appUpdater.shouldShowUpdateRow {
                 Divider()
@@ -856,6 +872,48 @@ private struct AppUpdateRow: View {
 
     private func formattedSize(_ size: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+}
+
+private struct AppUpdateCompletedRow: View {
+    let completion: AppUpdateCompletion
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(CodexStatusPalette.ok)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L.updateInstalledTitle(completion.tagName))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Text(L.updateInstalledDetail(completion.currentVersion))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 6)
+
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.borderless)
+            .focusable(false)
+            .help(L.dismissUpdateInstalled)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(CodexStatusPalette.ok.opacity(0.08))
     }
 }
 

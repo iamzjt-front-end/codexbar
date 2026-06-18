@@ -19,6 +19,12 @@ struct AppUpdateRelease: Equatable {
     }
 }
 
+struct AppUpdateCompletion: Equatable {
+    let tagName: String
+    let displayName: String
+    let currentVersion: String
+}
+
 enum AppUpdateState: Equatable {
     case idle
     case checking
@@ -36,11 +42,15 @@ final class AppUpdateService: ObservableObject {
     @Published private(set) var state: AppUpdateState = .idle
     @Published private(set) var downloadProgress: Double = 0
     @Published private(set) var latestRelease: AppUpdateRelease?
+    @Published private(set) var completedUpdate: AppUpdateCompletion?
 
     private static let latestReleaseURL = URL(string: "https://api.github.com/repos/iamzjt-front-end/codexbar/releases/latest")!
     private static let releasesAtomURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases.atom")!
     private static let latestReleasePageURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases/latest")!
     private static let githubBaseURL = URL(string: "https://github.com")!
+    private static let pendingInstallTagKey = "codexbar.pendingInstallTag"
+    private static let pendingInstallNameKey = "codexbar.pendingInstallName"
+    private static let pendingInstallNotifiedKey = "codexbar.pendingInstallNotifiedTag"
     private let defaults = UserDefaults.standard
     private var activeDownloadTask: URLSessionDownloadTask?
     private var downloadObservation: NSKeyValueObservation?
@@ -72,10 +82,20 @@ final class AppUpdateService: ObservableObject {
         return false
     }
 
+    var currentVersionDisplay: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let build = currentBundleVersion
+        if version.isEmpty {
+            return build
+        }
+        return "v\(version) (\(build))"
+    }
+
     func startPeriodicChecks() {
         guard !hasStarted else { return }
         hasStarted = true
 
+        detectCompletedInstallIfNeeded()
         Task { await checkForUpdates(silent: true) }
     }
 
@@ -138,6 +158,7 @@ final class AppUpdateService: ObservableObject {
 
             state = .installing(release)
             try launchInstaller(for: stagedAppURL)
+            rememberPendingInstall(for: release)
             NSApplication.shared.terminate(nil)
         } catch {
             activeDownloadTask?.cancel()
@@ -146,6 +167,13 @@ final class AppUpdateService: ObservableObject {
             downloadObservation = nil
             state = .failed(error.localizedDescription)
         }
+    }
+
+    func dismissCompletedUpdate() {
+        completedUpdate = nil
+        defaults.removeObject(forKey: Self.pendingInstallTagKey)
+        defaults.removeObject(forKey: Self.pendingInstallNameKey)
+        defaults.removeObject(forKey: Self.pendingInstallNotifiedKey)
     }
 
     private var availableRelease: AppUpdateRelease? {
@@ -159,6 +187,30 @@ final class AppUpdateService: ObservableObject {
 
     private var currentBundleVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    }
+
+    private func rememberPendingInstall(for release: AppUpdateRelease) {
+        defaults.set(release.tagName, forKey: Self.pendingInstallTagKey)
+        defaults.set(release.displayName, forKey: Self.pendingInstallNameKey)
+        defaults.removeObject(forKey: Self.pendingInstallNotifiedKey)
+        defaults.synchronize()
+    }
+
+    private func detectCompletedInstallIfNeeded() {
+        guard let tagName = defaults.string(forKey: Self.pendingInstallTagKey),
+              !tagName.isEmpty,
+              Self.isBuild(currentBundleVersion, atLeastReleaseTag: tagName) else {
+            return
+        }
+
+        let displayName = defaults.string(forKey: Self.pendingInstallNameKey) ?? tagName
+        let completion = AppUpdateCompletion(
+            tagName: tagName,
+            displayName: displayName,
+            currentVersion: currentVersionDisplay
+        )
+        completedUpdate = completion
+        notifyCompletedInstallIfNeeded(completion)
     }
 
     private func fetchLatestRelease() async throws -> GitHubReleaseResponse {
@@ -534,6 +586,26 @@ final class AppUpdateService: ObservableObject {
             guard granted else { return }
             let request = UNNotificationRequest(
                 identifier: "codexbar-update-\(release.tagName)",
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    private func notifyCompletedInstallIfNeeded(_ completion: AppUpdateCompletion) {
+        guard defaults.string(forKey: Self.pendingInstallNotifiedKey) != completion.tagName else { return }
+        defaults.set(completion.tagName, forKey: Self.pendingInstallNotifiedKey)
+
+        let content = UNMutableNotificationContent()
+        content.title = L.updateInstalledNotificationTitle
+        content.body = L.updateInstalledNotificationBody(completion.tagName)
+        content.sound = .default
+
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let request = UNNotificationRequest(
+                identifier: "codexbar-update-installed-\(completion.tagName)",
                 content: content,
                 trigger: nil
             )
