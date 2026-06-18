@@ -286,9 +286,9 @@ enum L {
 
     // MARK: - CodexRadar
     static func codexResetWindowOpen(_ resetTime: String) -> String {
-        zh ? "速蹬窗口已开启，预计于 \(resetTime) 重置" : "Reset window is open, expected at \(resetTime)"
+        zh ? "速蹬窗口已开启，预计于 \(resetTime) 重置" : "Speedrun window is open, expected to reset at \(resetTime)"
     }
-    static var codexResetWindowFallback: String { zh ? "速蹬窗口已开启" : "Reset window is open" }
+    static var codexResetWindowFallback: String { zh ? "速蹬窗口已开启" : "Speedrun window is open" }
     static var codexResetWindowSourceHelp: String { zh ? "打开官方证据" : "Open official source" }
     static var modelQualityTitle: String { zh ? "模型质量" : "Model Quality" }
     static var modelQualityRefreshHelp: String { zh ? "刷新模型质量" : "Refresh model quality" }

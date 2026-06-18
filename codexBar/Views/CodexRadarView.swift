@@ -21,7 +21,7 @@ struct CodexRadarView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .onAppear {
-            if radar.snapshot == nil {
+            if radar.needsVisibleRefresh {
                 Task { await radar.refresh() }
             }
         }

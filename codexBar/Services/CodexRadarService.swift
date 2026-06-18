@@ -25,6 +25,12 @@ final class CodexRadarService: ObservableObject {
         return Date().timeIntervalSince(lastFetchAt) > staleInterval
     }
 
+    var needsVisibleRefresh: Bool {
+        guard !isRefreshing else { return false }
+        guard let lastFetchAt else { return true }
+        return Date().timeIntervalSince(lastFetchAt) >= refreshInterval
+    }
+
     func start(runImmediately: Bool = true) {
         guard timer == nil else { return }
         if runImmediately {
