@@ -881,9 +881,6 @@ private struct AppUpdateRow: View {
 
         Task { @MainActor in
             await updater.downloadLatest()
-            if updater.hasReadyUpdate {
-                confirmInstall()
-            }
         }
     }
 

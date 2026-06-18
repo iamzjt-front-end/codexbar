@@ -85,11 +85,6 @@ final class AppUpdateService: ObservableObject {
         return false
     }
 
-    var hasReadyUpdate: Bool {
-        if case .readyToInstall = state { return true }
-        return false
-    }
-
     var currentVersionDisplay: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         let build = currentBundleVersion
