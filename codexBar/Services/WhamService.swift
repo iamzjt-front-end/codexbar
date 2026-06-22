@@ -4,11 +4,12 @@ class WhamService {
     static let shared = WhamService()
     private init() {}
 
-    private let baseURL = "https://chatgpt.com/backend-api/wham/usage"
+    private let usageURL = "https://chatgpt.com/backend-api/wham/usage"
+    private let resetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 
     /// 查询单个账号的 wham usage
     func fetchUsage(account: TokenAccount) async throws -> WhamUsageResult {
-        var request = URLRequest(url: URL(string: baseURL)!)
+        var request = URLRequest(url: URL(string: usageURL)!)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
@@ -36,6 +37,47 @@ class WhamService {
         return parseUsage(json)
     }
 
+    /// 查询官方 banked reset 次数和到期时间
+    func fetchResetCredits(account: TokenAccount) async throws -> WhamResetCreditsResult {
+        var request = URLRequest(url: URL(string: resetCreditsURL)!)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("codex-1", forHTTPHeaderField: "OpenAI-Beta")
+        request.setValue("Codex Desktop", forHTTPHeaderField: "originator")
+        request.setValue(account.chatgptAccountId, forHTTPHeaderField: "ChatGPT-Account-ID")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("zh-CN", forHTTPHeaderField: "oai-language")
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("https://chatgpt.com/codex/settings/usage", forHTTPHeaderField: "Referer")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw WhamError.invalidResponse }
+        switch http.statusCode {
+        case 200: break
+        case 401: throw WhamError.unauthorized
+        case 402: throw WhamError.forbidden
+        case 403: throw WhamError.forbidden
+        default: throw WhamError.httpError(http.statusCode)
+        }
+
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            throw WhamError.parseError
+        }
+
+        if let json = object as? [String: Any] {
+            return parseResetCredits(json)
+        }
+        if let array = object as? [[String: Any]] {
+            return Self.resetCreditsResult(from: array)
+        }
+
+        throw WhamError.parseError
+    }
+
     /// 查询账号所属组织名称
     func fetchOrgName(account: TokenAccount) async -> String? {
         let urlStr = "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=-480"
@@ -60,14 +102,19 @@ class WhamService {
         return name
     }
 
-    /// 刷新单个账号的用量和组织名
+    /// 刷新单个账号的用量、组织名和重置机会
     func refreshOne(account: TokenAccount, store: TokenStore) async {
         do {
             async let usageResult = self.fetchUsage(account: account)
             async let orgName = self.fetchOrgName(account: account)
-            let (result, name) = try await (usageResult, orgName)
+            async let resetCredits = self.fetchResetCreditsIfAvailable(account: account)
+            let (result, name, credits) = try await (usageResult, orgName, resetCredits)
             await MainActor.run {
-                let updated = Self.updatedAccount(account, with: result, orgName: name)
+                let updated = Self.updatedAccount(
+                    account,
+                    with: result.merging(resetCredits: credits),
+                    orgName: name
+                )
                 store.addOrUpdate(updated)
             }
         } catch WhamError.forbidden {
@@ -87,7 +134,7 @@ class WhamService {
         }
     }
 
-    /// 批量刷新 store 中所有账号的用量和组织名
+    /// 批量刷新 store 中所有账号的用量、组织名和重置机会
     func refreshAll(store: TokenStore) async {
         await withTaskGroup(of: Void.self) { group in
             for account in store.accounts {
@@ -95,9 +142,14 @@ class WhamService {
                     do {
                         async let usageResult = self.fetchUsage(account: account)
                         async let orgName = self.fetchOrgName(account: account)
-                        let (result, name) = try await (usageResult, orgName)
+                        async let resetCredits = self.fetchResetCreditsIfAvailable(account: account)
+                        let (result, name, credits) = try await (usageResult, orgName, resetCredits)
                         await MainActor.run {
-                            let updated = Self.updatedAccount(account, with: result, orgName: name)
+                            let updated = Self.updatedAccount(
+                                account,
+                                with: result.merging(resetCredits: credits),
+                                orgName: name
+                            )
                             store.addOrUpdate(updated)
                         }
                     } catch WhamError.forbidden {
@@ -121,6 +173,10 @@ class WhamService {
     }
 
     // MARK: - Private
+
+    private func fetchResetCreditsIfAvailable(account: TokenAccount) async -> WhamResetCreditsResult? {
+        try? await fetchResetCredits(account: account)
+    }
 
     private func parseUsage(_ json: [String: Any]) -> WhamUsageResult {
         let planType = json["plan_type"] as? String ?? "free"
@@ -167,6 +223,40 @@ class WhamService {
         )
     }
 
+    private func parseResetCredits(_ json: [String: Any]) -> WhamResetCreditsResult {
+        let topLevel = Self.resetCreditsResult(from: json)
+        if topLevel.availableCount != nil, topLevel.expiresAt != nil {
+            return topLevel
+        }
+
+        let objectKeys = [
+            "rate_limit_reset_credits",
+            "reset_credits",
+            "credits",
+            "data"
+        ]
+        for key in objectKeys {
+            if let nested = json[key] as? [String: Any] {
+                return topLevel.merging(Self.resetCreditsResult(from: nested))
+            }
+        }
+
+        let arrayKeys = [
+            "rate_limit_reset_credits",
+            "reset_credits",
+            "credits",
+            "items",
+            "data"
+        ]
+        for key in arrayKeys {
+            if let array = json[key] as? [[String: Any]] {
+                return topLevel.merging(Self.resetCreditsResult(from: array))
+            }
+        }
+
+        return Self.resetCreditsResult(from: json)
+    }
+
     @MainActor
     private static func updatedAccount(_ account: TokenAccount, with result: WhamUsageResult, orgName: String?) -> TokenAccount {
         let nextPrimaryResetAt = result.primaryResetAt ?? futureDate(account.primaryResetAt)
@@ -209,9 +299,15 @@ class WhamService {
             "expire_at",
             "expiration_at",
             "expiresAt",
+            "expirationAt",
             "valid_until",
             "valid_through",
-            "validUntil"
+            "validUntil",
+            "validThrough",
+            "expires",
+            "expiry",
+            "expiry_at",
+            "expired_at"
         ]
         for key in absoluteKeys {
             if let date = dateValue(resetCredits[key]) {
@@ -223,7 +319,11 @@ class WhamService {
             "expires_after_seconds",
             "expire_after_seconds",
             "seconds_until_expiration",
-            "ttl_seconds"
+            "expiresAfterSeconds",
+            "expireAfterSeconds",
+            "secondsUntilExpiration",
+            "ttl_seconds",
+            "ttlSeconds"
         ]
         for key in relativeKeys {
             if let seconds = doubleValue(resetCredits[key]), seconds > 0 {
@@ -232,6 +332,45 @@ class WhamService {
         }
 
         return nil
+    }
+
+    private static func resetCreditsResult(from resetCredits: [String: Any]) -> WhamResetCreditsResult {
+        let countKeys = [
+            "available_count",
+            "availableCount",
+            "available",
+            "remaining_count",
+            "remainingCount",
+            "count",
+            "total",
+            "credits"
+        ]
+        let availableCount = countKeys.compactMap { intValue(resetCredits[$0]) }.first
+        return WhamResetCreditsResult(
+            availableCount: availableCount,
+            expiresAt: resetCreditsExpirationDate(from: resetCredits)
+        )
+    }
+
+    private static func resetCreditsResult(from resetCredits: [[String: Any]]) -> WhamResetCreditsResult {
+        let now = Date()
+        let availableCredits = resetCredits.filter { credit in
+            if let used = boolValue(credit["used"]), used { return false }
+            if let redeemed = boolValue(credit["redeemed"]), redeemed { return false }
+            if let status = credit["status"] as? String, status.lowercased() != "available" { return false }
+            if let expiresAt = resetCreditsExpirationDate(from: credit), expiresAt <= now { return false }
+            return true
+        }
+        let source = availableCredits.isEmpty ? resetCredits : availableCredits
+        let expiresAt = source
+            .compactMap { resetCreditsExpirationDate(from: $0) }
+            .filter { $0 > now }
+            .min()
+
+        return WhamResetCreditsResult(
+            availableCount: availableCredits.count,
+            expiresAt: expiresAt
+        )
     }
 
     private static func dateValue(_ value: Any?) -> Date? {
@@ -245,17 +384,42 @@ class WhamService {
                 let seconds = numeric > 10_000_000_000 ? numeric / 1000 : numeric
                 return Date(timeIntervalSince1970: seconds)
             }
-            if let date = ISO8601DateFormatter().date(from: string) {
-                return date
+            for formatter in iso8601DateFormatters {
+                if let date = formatter.date(from: string) {
+                    return date
+                }
             }
         }
         return nil
+    }
+
+    private static var iso8601DateFormatters: [ISO8601DateFormatter] {
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        return [standard, fractional]
     }
 
     private static func doubleValue(_ value: Any?) -> Double? {
         if let double = value as? Double { return double }
         if let int = value as? Int { return Double(int) }
         if let string = value as? String { return Double(string) }
+        return nil
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let bool = value as? Bool { return bool }
+        if let int = value as? Int { return int != 0 }
+        if let string = value as? String {
+            switch string.lowercased() {
+            case "true", "1", "yes": return true
+            case "false", "0", "no": return false
+            default: return nil
+            }
+        }
         return nil
     }
 }
@@ -268,6 +432,31 @@ struct WhamUsageResult {
     let secondaryResetAt: Date?
     let rateLimitResetCreditsAvailableCount: Int?
     let rateLimitResetCreditsExpiresAt: Date?
+
+    func merging(resetCredits: WhamResetCreditsResult?) -> WhamUsageResult {
+        guard let resetCredits else { return self }
+        return WhamUsageResult(
+            planType: planType,
+            primaryUsedPercent: primaryUsedPercent,
+            secondaryUsedPercent: secondaryUsedPercent,
+            primaryResetAt: primaryResetAt,
+            secondaryResetAt: secondaryResetAt,
+            rateLimitResetCreditsAvailableCount: resetCredits.availableCount ?? rateLimitResetCreditsAvailableCount,
+            rateLimitResetCreditsExpiresAt: resetCredits.expiresAt ?? rateLimitResetCreditsExpiresAt
+        )
+    }
+}
+
+struct WhamResetCreditsResult {
+    let availableCount: Int?
+    let expiresAt: Date?
+
+    func merging(_ other: WhamResetCreditsResult) -> WhamResetCreditsResult {
+        WhamResetCreditsResult(
+            availableCount: availableCount ?? other.availableCount,
+            expiresAt: expiresAt ?? other.expiresAt
+        )
+    }
 }
 
 enum WhamError: LocalizedError {

@@ -9,6 +9,7 @@ enum CodexStatusPalette {
 
     static let ok = color(okRGB)
     static let warning = color(warningRGB)
+    static let brightWarning = Color(red: 0.98, green: 0.62, blue: 0.04)
     static let danger = color(dangerRGB)
     static let unavailable = color(unavailableRGB)
     static let neutral = Color.secondary

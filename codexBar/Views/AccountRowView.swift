@@ -108,8 +108,8 @@ struct AccountRowView: View {
                 }
             }
 
-            if shouldShowResetCreditsExpirationWarning {
-                resetCreditsExpirationWarning
+            if shouldShowResetCreditsExpiration {
+                resetCreditsExpirationInfo
             }
 
             // Line 2: usage info
@@ -236,53 +236,62 @@ struct AccountRowView: View {
         return CodexStatusPalette.ok
     }
 
-    private var shouldShowResetCreditsExpirationWarning: Bool {
+    private var shouldShowResetCreditsExpiration: Bool {
         guard let count = account.rateLimitResetCreditsAvailableCount,
               count > 0,
               let expiresAt = account.rateLimitResetCreditsExpiresAt else {
             return false
         }
-        let remaining = expiresAt.timeIntervalSince(now)
-        return remaining > 0 && remaining <= 3 * 24 * 60 * 60
+        return isWithinResetCreditsReminderWindow(expiresAt)
     }
 
-    private var resetCreditsExpirationWarning: some View {
+    private var resetCreditsExpirationInfo: some View {
         HStack(spacing: 5) {
-            Image(systemName: "clock.badge.exclamationmark.fill")
+            Image(systemName: resetCreditsExpirationIcon)
                 .font(.system(size: 10, weight: .semibold))
-            Text(L.resetCreditsExpireSoon(resetCreditsExpirationDescription))
+            Text(resetCreditsExpirationText)
                 .font(.system(size: 10, weight: .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 4)
         }
-        .foregroundColor(CodexStatusPalette.warning)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
+        .foregroundColor(resetCreditsExpirationColor)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(CodexStatusPalette.warning.opacity(0.14))
+                .fill(resetCreditsExpirationColor.opacity(0.2))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .strokeBorder(CodexStatusPalette.warning.opacity(0.24), lineWidth: 0.8)
+                .strokeBorder(resetCreditsExpirationColor.opacity(0.42), lineWidth: 1)
         )
-        .help(L.resetCreditsExpireSoonHelp)
+        .help(L.resetCreditsExpiresAtHelp)
     }
 
-    private var resetCreditsExpirationDescription: String {
+    private func isWithinResetCreditsReminderWindow(_ expiresAt: Date) -> Bool {
+        let remaining = expiresAt.timeIntervalSince(now)
+        return remaining > 0 && remaining <= 3 * 24 * 60 * 60
+    }
+
+    private var resetCreditsExpirationColor: Color {
+        CodexStatusPalette.brightWarning
+    }
+
+    private var resetCreditsExpirationIcon: String {
+        "calendar.badge.clock"
+    }
+
+    private var resetCreditsExpirationText: String {
         guard let expiresAt = account.rateLimitResetCreditsExpiresAt else { return "" }
-        let remaining = max(0, expiresAt.timeIntervalSince(now))
-        if remaining < 60 * 60 {
-            let minutes = max(1, Int(ceil(remaining / 60)))
-            return L.resetCreditsExpireInMinutes(minutes)
-        }
-        if remaining < 24 * 60 * 60 {
-            let hours = max(1, Int(ceil(remaining / 3600)))
-            return L.resetCreditsExpireInHours(hours)
-        }
-        let days = max(1, Int(ceil(remaining / (24 * 60 * 60))))
-        return L.resetCreditsExpireInDays(days)
+        return L.resetCreditsExpiresAt(formattedResetCreditsExpirationDate(expiresAt))
+    }
+
+    private func formattedResetCreditsExpirationDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter.string(from: date)
     }
 
     private func usageColor(_ percent: Double) -> Color {

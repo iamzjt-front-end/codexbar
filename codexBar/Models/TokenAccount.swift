@@ -15,7 +15,7 @@ struct TokenAccount: Codable, Identifiable {
     var primaryResetAt: Date?        // 5h 窗口重置绝对时间
     var secondaryResetAt: Date?      // 周窗口重置绝对时间
     var rateLimitResetCreditsAvailableCount: Int? // 官方 banked Codex 重置次数
-    var rateLimitResetCreditsExpiresAt: Date? // 官方 banked Codex 重置次数过期时间；接口当前可能不返回
+    var rateLimitResetCreditsExpiresAt: Date? // 官方 banked Codex 重置次数过期时间
     var lastChecked: Date?
     var isActive: Bool
     var isSuspended: Bool       // 403 = 账号被封禁/停用

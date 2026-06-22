@@ -63,7 +63,7 @@ CodexAppBar 是一个面向 Codex 用户的 macOS 菜单栏工具。它把多账
 | 菜单栏状态 | 在 macOS 菜单栏常驻展示额度数字或双进度条，并用颜色提示账号健康状态。 |
 | Codex 会话红绿灯 | 安装 hooks 后，可显示 Codex 当前是 ready、running、等待权限、离线还是状态过期。 |
 | 模型质量 | 接入 [codexradar.com](https://codexradar.com/)，展示 Model IQ、通过题数和模型对比结果。 |
-| 邀请重置次数 | 当账号返回 banked reset 数据时，展示可用的 Codex rate-limit reset 次数。 |
+| 邀请重置次数 | 展示可用的 Codex rate-limit reset 次数，并通过官方接口获取重置机会到期时间。 |
 | 本地 Token 统计 | 只读查询 Codex 本地 SQLite，展示今日 / 本周 / 本月 Token 用量、会话数和近 16 周热力图。 |
 | 一键全局刷新 | 右上角刷新会同时更新账号 token、额度、模型质量和本地 Token 统计。 |
 | 自动更新 | 后台检查 GitHub 最新 Release，发现新版本后可在菜单内一键下载、显示进度并自动重启更新。 |

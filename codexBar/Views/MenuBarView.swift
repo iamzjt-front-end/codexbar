@@ -74,8 +74,28 @@ struct MenuBarView: View {
 
     private var accountListHeight: CGFloat {
         let headerHeight = CGFloat(groupedAccounts.count) * 18
-        let rowHeight = CGFloat(store.accounts.count) * 72
-        return min(320, max(110, headerHeight + rowHeight + 16))
+        let rowHeight = store.accounts.reduce(CGFloat.zero) { total, account in
+            total + estimatedAccountRowHeight(for: account)
+        }
+        return min(360, max(110, headerHeight + rowHeight + 16))
+    }
+
+    private func estimatedAccountRowHeight(for account: TokenAccount) -> CGFloat {
+        var height: CGFloat = 72
+        if shouldShowResetCreditsExpiration(for: account) {
+            height += 32
+        }
+        return height
+    }
+
+    private func shouldShowResetCreditsExpiration(for account: TokenAccount) -> Bool {
+        guard let count = account.rateLimitResetCreditsAvailableCount,
+              count > 0,
+              let expiresAt = account.rateLimitResetCreditsExpiresAt else {
+            return false
+        }
+        let remaining = expiresAt.timeIntervalSince(now)
+        return remaining > 0 && remaining <= 3 * 24 * 60 * 60
     }
 
     private var refreshStatusText: String? {
@@ -390,23 +410,6 @@ struct MenuBarView: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        Task { await appUpdater.checkForUpdates(silent: false) }
-                    } label: {
-                        Image(systemName: appUpdater.hasAvailableUpdate ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
-                            .font(.system(size: 12))
-                            .frame(width: 18, height: 18, alignment: .center)
-                            .foregroundColor(appUpdater.hasAvailableUpdate ? CodexStatusPalette.warning : .primary)
-                            .background(
-                                Circle()
-                                    .fill(appUpdater.hasAvailableUpdate ? CodexStatusPalette.warning.opacity(0.16) : Color.clear)
-                            )
-                    }
-                    .buttonStyle(.borderless)
-                    .focusable(false)
-                    .disabled(appUpdater.isWorking)
-                    .help(L.checkForUpdates)
-
-                    Button {
                         language.cycle()
                     } label: {
                         Text(language.buttonLabel)
@@ -717,7 +720,7 @@ private struct AppUpdateRow: View {
     private var iconColor: Color {
         switch updater.state {
         case .available:
-            return CodexStatusPalette.warning
+            return CodexStatusPalette.brightWarning
         case .downloading, .checking, .installing:
             return .secondary
         case .readyToInstall, .upToDate:
@@ -845,7 +848,7 @@ private struct AppUpdateRow: View {
 
     private var primaryButtonBackground: Color {
         if case .available = updater.state {
-            return CodexStatusPalette.warning
+            return CodexStatusPalette.brightWarning
         }
         if case .readyToInstall = updater.state {
             return CodexStatusPalette.ok
@@ -865,7 +868,7 @@ private struct AppUpdateRow: View {
 
     private var primaryButtonBorder: Color {
         if case .available = updater.state {
-            return CodexStatusPalette.warning.opacity(0.45)
+            return CodexStatusPalette.brightWarning.opacity(0.5)
         }
         if case .readyToInstall = updater.state {
             return CodexStatusPalette.ok.opacity(0.45)

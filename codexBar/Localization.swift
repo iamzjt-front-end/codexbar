@@ -152,14 +152,20 @@ enum L {
     static var resetCreditsUnknown: String { "--" }
     static var resetCreditsHelp: String {
         zh
-            ? "官方 banked Codex rate-limit reset 次数；当前接口通常只返回数量，若返回过期时间会在临近 3 天时提示。"
-            : "Official banked Codex rate-limit resets. The current endpoint usually returns only the count; if an expiration is returned, a 3-day warning appears."
+            ? "官方 banked Codex rate-limit reset 次数；会额外查询重置机会到期时间，临近 3 天时提示。"
+            : "Official banked Codex rate-limit resets. The app also checks reset-credit expiration and warns within 3 days."
     }
     static func resetCreditsExpireSoon(_ time: String) -> String {
         zh ? "重置机会即将过期：\(time)" : "Reset credits expire soon: \(time)"
     }
     static var resetCreditsExpireSoonHelp: String {
         zh ? "官方返回了重置机会过期时间，距离过期不足 3 天。" : "The official response includes a reset-credit expiration less than 3 days away."
+    }
+    static func resetCreditsExpiresAt(_ time: String) -> String {
+        zh ? "重置机会到期：\(time)" : "Reset credits expire: \(time)"
+    }
+    static var resetCreditsExpiresAtHelp: String {
+        zh ? "官方重置机会到期时间。" : "Official reset-credit expiration time."
     }
     static func resetCreditsExpireInMinutes(_ minutes: Int) -> String {
         zh ? "\(minutes) 分钟内" : "in \(minutes) min"

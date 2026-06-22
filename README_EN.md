@@ -63,7 +63,7 @@ CodexAppBar is a macOS menu bar companion for Codex users. It brings account man
 | Menu bar status | Keep quota visible in the macOS menu bar with number mode, progress mode, and account-health colors. |
 | Codex session lights | Install Codex hooks to show whether Codex is ready, running, waiting for permission, offline, or stale. |
 | Model quality | Display CodexRadar Model IQ, pass count, and comparison entries from [codexradar.com](https://codexradar.com/). |
-| Banked resets | Show banked Codex rate-limit reset count when the account exposes it. |
+| Banked resets | Show banked Codex rate-limit reset count and fetch reset-credit expiration from the official endpoint. |
 | Local token usage | Read local Codex SQLite state to show today / week / month token usage, session count, and a 16-week heatmap. |
 | Global refresh | Refresh account tokens, quota usage, model quality, and local usage stats from the top-right refresh button. |
 | Auto update | Check GitHub Releases in the background, show update availability in the menu, download with progress, and relaunch automatically. |
