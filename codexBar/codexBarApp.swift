@@ -283,8 +283,8 @@ private final class StatusBarCapsuleView: NSView {
     private static let rightPadding: CGFloat = 2
     private static let iconSize: CGFloat = 16
     private static let textGap: CGFloat = 3
-    private static let barsGap: CGFloat = 4
-    private static let lightGap: CGFloat = 5
+    private static let barsGap: CGFloat = 0
+    private static let lightGap: CGFloat = 2
     private static let textRenderPadding: CGFloat = 4
     private static let dotSize: CGFloat = 8.4
     private static let dotGap: CGFloat = 5.0
@@ -447,8 +447,8 @@ private final class StatusQuotaBarsView: NSView {
     private static let itemGap: CGFloat = 4
     private static let trackWidth: CGFloat = 44
     private static let trackHeight: CGFloat = 3.2
-    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
-    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold)
+    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     private static let maximumLabelWidth = ceil(textSize(label, font: labelFont).width)
     private static let maximumValueWidth = ceil(textSize("100%", font: valueFont).width)
     private static let labelTextYOffset: CGFloat = -0.2
