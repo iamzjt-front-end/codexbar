@@ -7,8 +7,6 @@ import UserNotifications
 struct AppUpdateRelease: Equatable {
     let tagName: String
     let title: String
-    let releaseURL: URL
-    let publishedAt: Date?
     let assetName: String
     let assetURL: URL
     let assetSize: Int64
@@ -21,7 +19,6 @@ struct AppUpdateRelease: Equatable {
 
 struct AppUpdateCompletion: Equatable {
     let tagName: String
-    let displayName: String
     let currentVersion: String
 }
 
@@ -42,15 +39,14 @@ final class AppUpdateService: ObservableObject {
 
     @Published private(set) var state: AppUpdateState = .idle
     @Published private(set) var downloadProgress: Double = 0
-    @Published private(set) var latestRelease: AppUpdateRelease?
     @Published private(set) var completedUpdate: AppUpdateCompletion?
+    private var latestRelease: AppUpdateRelease?
 
     private static let latestReleaseURL = URL(string: "https://api.github.com/repos/iamzjt-front-end/codexbar/releases/latest")!
     private static let releasesAtomURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases.atom")!
     private static let latestReleasePageURL = URL(string: "https://github.com/iamzjt-front-end/codexbar/releases/latest")!
     private static let githubBaseURL = URL(string: "https://github.com")!
     private static let pendingInstallTagKey = "codexbar.pendingInstallTag"
-    private static let pendingInstallNameKey = "codexbar.pendingInstallName"
     private static let pendingInstallNotifiedKey = "codexbar.pendingInstallNotifiedTag"
     private let defaults = UserDefaults.standard
     private var activeDownloadTask: URLSessionDownloadTask?
@@ -77,12 +73,6 @@ final class AppUpdateService: ObservableObject {
         case .idle, .upToDate, .available, .readyToInstall, .failed:
             return false
         }
-    }
-
-    var hasAvailableUpdate: Bool {
-        if case .available = state { return true }
-        if case .readyToInstall = state { return true }
-        return false
     }
 
     var currentVersionDisplay: String {
@@ -201,7 +191,6 @@ final class AppUpdateService: ObservableObject {
     func dismissCompletedUpdate() {
         completedUpdate = nil
         defaults.removeObject(forKey: Self.pendingInstallTagKey)
-        defaults.removeObject(forKey: Self.pendingInstallNameKey)
         defaults.removeObject(forKey: Self.pendingInstallNotifiedKey)
     }
 
@@ -220,7 +209,6 @@ final class AppUpdateService: ObservableObject {
 
     private func rememberPendingInstall(for release: AppUpdateRelease) {
         defaults.set(release.tagName, forKey: Self.pendingInstallTagKey)
-        defaults.set(release.displayName, forKey: Self.pendingInstallNameKey)
         defaults.removeObject(forKey: Self.pendingInstallNotifiedKey)
         defaults.synchronize()
     }
@@ -232,10 +220,8 @@ final class AppUpdateService: ObservableObject {
             return
         }
 
-        let displayName = defaults.string(forKey: Self.pendingInstallNameKey) ?? tagName
         let completion = AppUpdateCompletion(
             tagName: tagName,
-            displayName: displayName,
             currentVersion: currentVersionDisplay
         )
         completedUpdate = completion
@@ -263,9 +249,7 @@ final class AppUpdateService: ObservableObject {
             throw AppUpdateError.badServerStatus(httpResponse.statusCode)
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(GitHubReleaseResponse.self, from: data)
+        return try JSONDecoder().decode(GitHubReleaseResponse.self, from: data)
     }
 
     private func fetchLatestReleaseFromWeb() async throws -> GitHubReleaseResponse {
@@ -298,8 +282,6 @@ final class AppUpdateService: ObservableObject {
         return GitHubReleaseResponse(
             tagName: tagName,
             name: "CodexAppBar \(tagName)",
-            htmlURL: htmlURL,
-            publishedAt: nil,
             assets: [asset]
         )
     }
@@ -321,8 +303,6 @@ final class AppUpdateService: ObservableObject {
         return GitHubReleaseResponse(
             tagName: tagName,
             name: "CodexAppBar \(tagName)",
-            htmlURL: finalURL,
-            publishedAt: nil,
             assets: [asset]
         )
     }
@@ -719,8 +699,6 @@ final class AppUpdateService: ObservableObject {
 private struct GitHubReleaseResponse: Decodable {
     let tagName: String
     let name: String?
-    let htmlURL: URL
-    let publishedAt: Date?
     let assets: [GitHubReleaseAsset]
 
     var installableRelease: AppUpdateRelease? {
@@ -732,8 +710,6 @@ private struct GitHubReleaseResponse: Decodable {
         return AppUpdateRelease(
             tagName: tagName,
             title: name ?? tagName,
-            releaseURL: htmlURL,
-            publishedAt: publishedAt,
             assetName: asset.name,
             assetURL: asset.browserDownloadURL,
             assetSize: asset.size,
@@ -744,8 +720,6 @@ private struct GitHubReleaseResponse: Decodable {
     private enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case name
-        case htmlURL = "html_url"
-        case publishedAt = "published_at"
         case assets
     }
 }

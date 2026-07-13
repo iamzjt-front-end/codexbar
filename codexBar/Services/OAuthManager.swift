@@ -13,17 +13,12 @@ class OAuthManager: NSObject, ObservableObject {
     private let tokenURL = "https://auth.openai.com/oauth/token"
     private let scope = "openid profile email offline_access api.connectors.read api.connectors.invoke"
 
-    @Published var isAuthenticating = false
-    @Published var errorMessage: String?
-
     private var codeVerifier: String = ""
     private var expectedState: String = ""
     private var localServer: LocalCallbackServer?
     private var completionHandler: ((Result<OAuthTokens, Error>) -> Void)?
 
     func startOAuth(completion: @escaping (Result<OAuthTokens, Error>) -> Void) {
-        isAuthenticating = true
-        errorMessage = nil
         completionHandler = completion
 
         codeVerifier = generateCodeVerifier()
@@ -60,13 +55,6 @@ class OAuthManager: NSObject, ObservableObject {
         }
 
         NSWorkspace.shared.open(url)
-    }
-
-    func cancel() {
-        localServer?.stop()
-        localServer = nil
-        isAuthenticating = false
-        completionHandler = nil
     }
 
     // MARK: - Private
@@ -145,7 +133,6 @@ class OAuthManager: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.localServer?.stop()
                 self.localServer = nil
-                self.isAuthenticating = false
                 self.completionHandler?(.success(tokens))
                 self.completionHandler = nil
             }
@@ -156,8 +143,6 @@ class OAuthManager: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.localServer?.stop()
             self.localServer = nil
-            self.isAuthenticating = false
-            self.errorMessage = error.localizedDescription
             self.completionHandler?(.failure(error))
             self.completionHandler = nil
         }

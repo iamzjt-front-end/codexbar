@@ -30,7 +30,6 @@ final class CodexHookInstallerService: ObservableObject {
     static let shared = CodexHookInstallerService()
 
     @Published private(set) var state: CodexHookInstallState = .checking
-    @Published private(set) var lastBackupPath: String?
 
     let hooksURL: URL
     let scriptURL: URL
@@ -166,9 +165,6 @@ final class CodexHookInstallerService: ObservableObject {
         if backupExisting, fileManager.fileExists(atPath: hooksURL.path) {
             let backup = backupURL()
             try fileManager.copyItem(at: hooksURL, to: backup)
-            lastBackupPath = backup.path
-        } else {
-            lastBackupPath = nil
         }
 
         let updated = try mergedRootObject(root, scriptURL: scriptURL)

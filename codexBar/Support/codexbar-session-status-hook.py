@@ -9,7 +9,6 @@ python3 /absolute/path/to/codexbar-session-status-hook.py UserPromptSubmit
 import datetime as _dt
 import json
 import os
-import re
 import sys
 import tempfile
 from pathlib import Path
@@ -17,30 +16,9 @@ from pathlib import Path
 
 STATE_BY_EVENT = {
     "SessionStart": "ready",
-    "UserPromptSubmit": "running",
-    "PreToolUse": "running",
     "PermissionRequest": "needs_attention",
-    "PostToolUse": "running",
     "Stop": "ready",
-    "SubagentStart": "running",
-    "SubagentStop": "running",
 }
-
-THREAD_ID_KEYS = [
-    "thread_id",
-    "threadId",
-    "thread",
-    "conversation_id",
-    "conversationId",
-    "conversation",
-]
-
-THREAD_ID_ENV_KEYS = [
-    "CODEX_THREAD_ID",
-    "CODEX_THREADID",
-    "CODEX_CONVERSATION_ID",
-    "CODEX_CONVERSATIONID",
-]
 
 COMPACT_KEYS = [
     "source",
@@ -52,9 +30,6 @@ COMPACT_KEYS = [
     "trigger",
     "matcher",
 ]
-
-THREAD_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
-
 
 def _first_value(obj, keys):
     if isinstance(obj, dict):
@@ -102,19 +77,6 @@ def _is_compact(event, payload, variant):
         return True
     marker = _first_value(payload, COMPACT_KEYS)
     return marker is not None and str(marker).lower() == "compact"
-
-
-def _thread_id(payload):
-    for key in THREAD_ID_ENV_KEYS:
-        value = os.environ.get(key)
-        if value and THREAD_ID_RE.match(value):
-            return value
-
-    value = _first_value(payload, THREAD_ID_KEYS)
-    if value is None:
-        return None
-    value = str(value)
-    return value if THREAD_ID_RE.match(value) else None
 
 
 def _phase(event, payload, variant):
@@ -171,7 +133,6 @@ def main():
     source = f"{event}:{variant}" if variant else event
 
     status = {
-        "threadId": _thread_id(payload),
         "state": state,
         "phase": _phase(event, payload, variant),
         "title": _first_value(payload, ["title", "thread_title", "threadTitle"]),

@@ -101,10 +101,6 @@ class TokenStore: ObservableObject {
     }
 
 
-    func activeAccount() -> TokenAccount? {
-        accounts.first { $0.isActive }
-    }
-
     // MARK: - Private
 
     func markActiveAccount() {

@@ -122,7 +122,6 @@ run_app() {
 
 if [[ "$RUN_ONLY" == "1" ]]; then
   run_app
-  exit 0
 fi
 
 run_build
@@ -130,4 +129,3 @@ run_build
 if [[ "$BUILD_ONLY" == "0" ]]; then
   run_app
 fi
-

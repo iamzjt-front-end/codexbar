@@ -5,15 +5,10 @@ import SwiftUI
 
 @main
 struct codexBarApp: App {
-    @StateObject private var store = TokenStore.shared
-    @StateObject private var oauth = OAuthManager.shared
-    @StateObject private var language = LanguageSettings.shared
-    @StateObject private var refreshFrequency = RefreshFrequencySettings.shared
-    @StateObject private var quotaDisplay = QuotaDisplaySettings.shared
-    @StateObject private var codexSessionStatus = CodexSessionStatusService.shared
-    @StateObject private var codexHookInstaller = CodexHookInstallerService.shared
-
     init() {
+        // 单元测试会把测试包注入应用进程；此时禁止启动真实刷新、hooks 和更新任务。
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+
         // App 级后台续期，脱离菜单 View 生命周期（菜单关闭时 View 不存在，其内 Timer 不跑）
         BackgroundRefresher.shared.start(interval: RefreshFrequencySettings.shared.selection.backgroundInterval)
         CodexRadarService.shared.start()
@@ -189,7 +184,6 @@ private final class AppStatusBarController: NSObject {
               let language,
               let refreshFrequency,
               let quotaDisplay,
-              let codexSessionStatus,
               let codexHookInstaller else { return }
 
         let popover = NSPopover()
@@ -203,7 +197,6 @@ private final class AppStatusBarController: NSObject {
                 .environmentObject(language)
                 .environmentObject(refreshFrequency)
                 .environmentObject(quotaDisplay)
-                .environmentObject(codexSessionStatus)
                 .environmentObject(codexHookInstaller)
                 .environmentObject(AppUpdateService.shared)
         )
@@ -215,24 +208,12 @@ private final class AppStatusBarController: NSObject {
         guard let active = store.accounts.first(where: { $0.isActive }) else {
             return StatusBarQuotaState.empty
         }
-        let primaryDisplayPercent = Self.displayPercent(forUsedPercent: active.primaryUsedPercent, amountMode: amountMode)
-        let secondaryDisplayPercent = Self.displayPercent(forUsedPercent: active.secondaryUsedPercent, amountMode: amountMode)
+        let weeklyDisplayPercent = amountMode.displayPercent(forUsedPercent: active.weeklyUsedPercent)
         return StatusBarQuotaState(
-            text: "\(Int(primaryDisplayPercent))%·\(Int(secondaryDisplayPercent))%",
-            primaryDisplayPercent: primaryDisplayPercent,
-            secondaryDisplayPercent: secondaryDisplayPercent,
-            primaryUsedPercent: active.primaryUsedPercent,
-            secondaryUsedPercent: active.secondaryUsedPercent
+            text: "7d \(Int(weeklyDisplayPercent))%",
+            weeklyDisplayPercent: weeklyDisplayPercent,
+            weeklyUsedPercent: active.weeklyUsedPercent
         )
-    }
-
-    private static func displayPercent(forUsedPercent usedPercent: Double, amountMode: QuotaAmountMode) -> Double {
-        switch amountMode {
-        case .used:
-            return min(max(usedPercent, 0), 100)
-        case .remaining:
-            return min(max(100 - usedPercent, 0), 100)
-        }
     }
 
     private static func iconName(from store: TokenStore) -> String {
@@ -245,10 +226,10 @@ private final class AppStatusBarController: NSObject {
         if ref.contains(where: { $0.isBanned }) {
             return "xmark.circle.fill"
         }
-        if ref.contains(where: { $0.secondaryExhausted }) {
+        if ref.contains(where: { $0.weeklyExhausted }) {
             return "exclamationmark.triangle.fill"
         }
-        if ref.contains(where: { $0.quotaExhausted || $0.primaryUsedPercent >= 80 || $0.secondaryUsedPercent >= 80 }) {
+        if ref.contains(where: { $0.weeklyUsedPercent >= 80 }) {
             return "bolt.circle.fill"
         }
         return "terminal.fill"
@@ -257,21 +238,17 @@ private final class AppStatusBarController: NSObject {
 
 private struct StatusBarQuotaState {
     let text: String
-    let primaryDisplayPercent: Double?
-    let secondaryDisplayPercent: Double?
-    let primaryUsedPercent: Double?
-    let secondaryUsedPercent: Double?
+    let weeklyDisplayPercent: Double?
+    let weeklyUsedPercent: Double?
 
     static let empty = StatusBarQuotaState(
-        text: "--·--",
-        primaryDisplayPercent: nil,
-        secondaryDisplayPercent: nil,
-        primaryUsedPercent: nil,
-        secondaryUsedPercent: nil
+        text: "7d --",
+        weeklyDisplayPercent: nil,
+        weeklyUsedPercent: nil
     )
 
     var hasBars: Bool {
-        primaryDisplayPercent != nil && secondaryDisplayPercent != nil
+        weeklyDisplayPercent != nil
     }
 }
 
@@ -302,7 +279,6 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
 }
 
 private final class StatusBarCapsuleView: NSView {
-    private static let height: CGFloat = 20
     private static let leftPadding: CGFloat = 0
     private static let rightPadding: CGFloat = 2
     private static let iconSize: CGFloat = 16
@@ -363,10 +339,8 @@ private final class StatusBarCapsuleView: NSView {
             textField.stringValue = quotaState.text
         }
         barsView.configure(
-            primaryDisplayPercent: quotaState.primaryDisplayPercent ?? 0,
-            secondaryDisplayPercent: quotaState.secondaryDisplayPercent ?? 0,
-            primaryUsedPercent: quotaState.primaryUsedPercent ?? 0,
-            secondaryUsedPercent: quotaState.secondaryUsedPercent ?? 0
+            weeklyDisplayPercent: quotaState.weeklyDisplayPercent ?? 0,
+            weeklyUsedPercent: quotaState.weeklyUsedPercent ?? 0
         )
         lightsView.configure(light: light)
         lightsView.isHidden = !showStatusLights
@@ -479,18 +453,14 @@ private final class StatusQuotaBarsView: NSView {
     private static let trackHeight: CGFloat = 3.2
     private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 7.5, weight: .medium)
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 8.0, weight: .semibold)
-    private static let rowCenterGap: CGFloat = 8.2
     private static let labelTextYOffset: CGFloat = -0.2
     private static let valueTextYOffset: CGFloat = -0.2
     private static let fillAnimationKey = "codexbar.quotaFill"
     private static let fillAnimationDuration: CFTimeInterval = 0.38
 
-    private let primaryFillLayer = CAShapeLayer()
-    private let secondaryFillLayer = CAShapeLayer()
-    private var primaryDisplayPercent: Double = 0
-    private var secondaryDisplayPercent: Double = 0
-    private var primaryUsedPercent: Double = 0
-    private var secondaryUsedPercent: Double = 0
+    private let weeklyFillLayer = CAShapeLayer()
+    private var weeklyDisplayPercent: Double = 0
+    private var weeklyUsedPercent: Double = 0
     private var hasLaidOutFillLayers = false
     private var lastFillBounds: NSRect = .zero
 
@@ -507,31 +477,20 @@ private final class StatusQuotaBarsView: NSView {
     }
 
     func configure(
-        primaryDisplayPercent: Double,
-        secondaryDisplayPercent: Double,
-        primaryUsedPercent: Double,
-        secondaryUsedPercent: Double
+        weeklyDisplayPercent: Double,
+        weeklyUsedPercent: Double
     ) {
-        let nextPrimaryDisplay = Self.clamped(primaryDisplayPercent)
-        let nextSecondaryDisplay = Self.clamped(secondaryDisplayPercent)
-        let nextPrimaryUsed = Self.clamped(primaryUsedPercent)
-        let nextSecondaryUsed = Self.clamped(secondaryUsedPercent)
-        let displayChanged = self.primaryDisplayPercent != nextPrimaryDisplay ||
-            self.secondaryDisplayPercent != nextSecondaryDisplay
-        guard self.primaryDisplayPercent != nextPrimaryDisplay ||
-            self.secondaryDisplayPercent != nextSecondaryDisplay ||
-            self.primaryUsedPercent != nextPrimaryUsed ||
-            self.secondaryUsedPercent != nextSecondaryUsed else { return }
-        let primaryFromPath = primaryFillLayer.presentation()?.path ?? primaryFillLayer.path
-        let secondaryFromPath = secondaryFillLayer.presentation()?.path ?? secondaryFillLayer.path
-        self.primaryDisplayPercent = nextPrimaryDisplay
-        self.secondaryDisplayPercent = nextSecondaryDisplay
-        self.primaryUsedPercent = nextPrimaryUsed
-        self.secondaryUsedPercent = nextSecondaryUsed
+        let nextWeeklyDisplay = Self.clamped(weeklyDisplayPercent)
+        let nextWeeklyUsed = Self.clamped(weeklyUsedPercent)
+        let displayChanged = self.weeklyDisplayPercent != nextWeeklyDisplay
+        guard self.weeklyDisplayPercent != nextWeeklyDisplay ||
+            self.weeklyUsedPercent != nextWeeklyUsed else { return }
+        let weeklyFromPath = weeklyFillLayer.presentation()?.path ?? weeklyFillLayer.path
+        self.weeklyDisplayPercent = nextWeeklyDisplay
+        self.weeklyUsedPercent = nextWeeklyUsed
         updateFillLayers(
             animated: displayChanged && hasLaidOutFillLayers && window != nil && !isHidden,
-            primaryFromPath: primaryFromPath,
-            secondaryFromPath: secondaryFromPath
+            weeklyFromPath: weeklyFromPath
         )
         needsDisplay = true
     }
@@ -548,16 +507,10 @@ private final class StatusQuotaBarsView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let rowOffset = Self.rowCenterGap / 2
-        drawRow(
-            label: "5h",
-            displayPercent: primaryDisplayPercent,
-            centerY: bounds.midY + rowOffset
-        )
         drawRow(
             label: "7d",
-            displayPercent: secondaryDisplayPercent,
-            centerY: bounds.midY - rowOffset
+            displayPercent: weeklyDisplayPercent,
+            centerY: bounds.midY
         )
     }
 
@@ -608,13 +561,11 @@ private final class StatusQuotaBarsView: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
 
-        [primaryFillLayer, secondaryFillLayer].forEach { fillLayer in
-            fillLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
-            fillLayer.masksToBounds = false
-            fillLayer.opacity = 0
-            fillLayer.zPosition = 1
-            layer?.addSublayer(fillLayer)
-        }
+        weeklyFillLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        weeklyFillLayer.masksToBounds = false
+        weeklyFillLayer.opacity = 0
+        weeklyFillLayer.zPosition = 1
+        layer?.addSublayer(weeklyFillLayer)
     }
 
     private func drawPill(_ rect: NSRect, color: NSColor) {
@@ -624,26 +575,16 @@ private final class StatusQuotaBarsView: NSView {
 
     private func updateFillLayers(
         animated: Bool,
-        primaryFromPath: CGPath? = nil,
-        secondaryFromPath: CGPath? = nil
+        weeklyFromPath: CGPath? = nil
     ) {
         guard bounds.width > 0 else { return }
-        let rowOffset = Self.rowCenterGap / 2
         updateFillLayer(
-            primaryFillLayer,
-            displayPercent: primaryDisplayPercent,
-            usedPercent: primaryUsedPercent,
-            centerY: bounds.midY + rowOffset,
+            weeklyFillLayer,
+            displayPercent: weeklyDisplayPercent,
+            usedPercent: weeklyUsedPercent,
+            centerY: bounds.midY,
             animated: animated,
-            fromPath: primaryFromPath
-        )
-        updateFillLayer(
-            secondaryFillLayer,
-            displayPercent: secondaryDisplayPercent,
-            usedPercent: secondaryUsedPercent,
-            centerY: bounds.midY - rowOffset,
-            animated: animated,
-            fromPath: secondaryFromPath
+            fromPath: weeklyFromPath
         )
     }
 

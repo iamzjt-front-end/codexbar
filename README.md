@@ -59,8 +59,8 @@ CodexAppBar 是一个面向 Codex 用户的 macOS 菜单栏工具。它把多账
 | 模块 | 说明 |
 | --- | --- |
 | 多账号管理 | 通过 OAuth 添加 ChatGPT/Codex 账号，支持导入外部账号 JSON，并按组织聚合 Team / Workspace 账号。 |
-| 额度监控 | 同时展示 Codex 5h 滚动额度和 7d 周额度，包含重置时间，并支持“已用 / 剩余”口径切换。 |
-| 菜单栏状态 | 在 macOS 菜单栏常驻展示额度数字或双进度条，并用颜色提示账号健康状态。 |
+| 额度监控 | 展示 Codex 7d 周额度和重置时间，并支持“已用 / 剩余”口径切换。 |
+| 菜单栏状态 | 在 macOS 菜单栏常驻展示 7d 额度数字或进度条，并用颜色提示账号健康状态。 |
 | Codex 会话红绿灯 | 安装 hooks 后，可显示 Codex 当前是 ready、running、等待权限、离线还是状态过期。 |
 | 模型质量 | 接入 [codexradar.com](https://codexradar.com/)，展示 Model IQ、通过题数和模型对比结果。 |
 | 邀请重置次数 | 展示可用的 Codex rate-limit reset 次数，并通过官方接口获取重置机会到期时间。 |

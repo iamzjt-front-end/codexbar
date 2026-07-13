@@ -10,10 +10,8 @@ struct TokenAccount: Codable, Identifiable {
     var idToken: String
     var expiresAt: Date?
     var planType: String
-    var primaryUsedPercent: Double   // 5h 窗口已使用%
-    var secondaryUsedPercent: Double // 周窗口已使用%
-    var primaryResetAt: Date?        // 5h 窗口重置绝对时间
-    var secondaryResetAt: Date?      // 周窗口重置绝对时间
+    var weeklyUsedPercent: Double    // 7d 窗口已使用%
+    var weeklyResetAt: Date?         // 7d 窗口重置绝对时间
     var rateLimitResetCreditsAvailableCount: Int? // 官方 banked Codex 重置次数
     var rateLimitResetCreditsExpiresAt: Date? // 官方 banked Codex 重置次数过期时间
     var lastChecked: Date?
@@ -32,16 +30,21 @@ struct TokenAccount: Codable, Identifiable {
         case idToken = "id_token"
         case expiresAt = "expires_at"
         case planType = "plan_type"
-        case primaryUsedPercent = "primary_used_percent"
-        case secondaryUsedPercent = "secondary_used_percent"
-        case primaryResetAt = "primary_reset_at"
-        case secondaryResetAt = "secondary_reset_at"
+        case weeklyUsedPercent = "weekly_used_percent"
+        case weeklyResetAt = "weekly_reset_at"
         case rateLimitResetCreditsAvailableCount = "rate_limit_reset_credits_available_count"
         case rateLimitResetCreditsExpiresAt = "rate_limit_reset_credits_expires_at"
         case lastChecked = "last_checked"
         case isActive = "is_active"
         case isSuspended = "is_suspended"
         case tokenExpired = "token_expired"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case primaryUsedPercent = "primary_used_percent"
+        case secondaryUsedPercent = "secondary_used_percent"
+        case primaryResetAt = "primary_reset_at"
+        case secondaryResetAt = "secondary_reset_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -55,13 +58,33 @@ struct TokenAccount: Codable, Identifiable {
         idToken = try c.decode(String.self, forKey: .idToken)
         expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
         planType = try c.decodeIfPresent(String.self, forKey: .planType) ?? "free"
-        primaryUsedPercent = try c.decodeIfPresent(Double.self, forKey: .primaryUsedPercent) ?? 0
-        secondaryUsedPercent = try c.decodeIfPresent(Double.self, forKey: .secondaryUsedPercent) ?? 0
-        primaryResetAt = try c.decodeIfPresent(Date.self, forKey: .primaryResetAt)
-        secondaryResetAt = try c.decodeIfPresent(Date.self, forKey: .secondaryResetAt)
+        lastChecked = try c.decodeIfPresent(Date.self, forKey: .lastChecked)
+
+        if c.contains(.weeklyUsedPercent) || c.contains(.weeklyResetAt) {
+            weeklyUsedPercent = try c.decodeIfPresent(Double.self, forKey: .weeklyUsedPercent) ?? 0
+            weeklyResetAt = try c.decodeIfPresent(Date.self, forKey: .weeklyResetAt)
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            let primaryUsed = try legacy.decodeIfPresent(Double.self, forKey: .primaryUsedPercent) ?? 0
+            let secondaryUsed = try legacy.decodeIfPresent(Double.self, forKey: .secondaryUsedPercent) ?? 0
+            let primaryReset = try legacy.decodeIfPresent(Date.self, forKey: .primaryResetAt)
+            let secondaryReset = try legacy.decodeIfPresent(Date.self, forKey: .secondaryResetAt)
+
+            if secondaryReset != nil || secondaryUsed > 0 {
+                // 旧双窗口结构：secondary 承载 7d。
+                weeklyUsedPercent = secondaryUsed
+                weeklyResetAt = secondaryReset
+            } else if Self.looksLikeWeeklyReset(primaryReset, checkedAt: lastChecked) {
+                // 新接口被旧版本保存过：primary 实际已变成 7d，secondary 被写成 0。
+                weeklyUsedPercent = primaryUsed
+                weeklyResetAt = primaryReset
+            } else {
+                weeklyUsedPercent = secondaryUsed
+                weeklyResetAt = secondaryReset
+            }
+        }
         rateLimitResetCreditsAvailableCount = try c.decodeIfPresent(Int.self, forKey: .rateLimitResetCreditsAvailableCount)
         rateLimitResetCreditsExpiresAt = try c.decodeIfPresent(Date.self, forKey: .rateLimitResetCreditsExpiresAt)
-        lastChecked = try c.decodeIfPresent(Date.self, forKey: .lastChecked)
         isActive = try c.decodeIfPresent(Bool.self, forKey: .isActive) ?? false
         isSuspended = try c.decodeIfPresent(Bool.self, forKey: .isSuspended) ?? false
         tokenExpired = try c.decodeIfPresent(Bool.self, forKey: .tokenExpired) ?? false
@@ -70,9 +93,8 @@ struct TokenAccount: Codable, Identifiable {
 
     init(email: String = "", accountId: String = "", chatgptAccountId: String = "", accessToken: String = "",
          refreshToken: String = "", idToken: String = "", expiresAt: Date? = nil,
-         planType: String = "free", primaryUsedPercent: Double = 0,
-         secondaryUsedPercent: Double = 0,
-         primaryResetAt: Date? = nil, secondaryResetAt: Date? = nil,
+         planType: String = "free", weeklyUsedPercent: Double = 0,
+         weeklyResetAt: Date? = nil,
          rateLimitResetCreditsAvailableCount: Int? = nil,
          rateLimitResetCreditsExpiresAt: Date? = nil,
          lastChecked: Date? = nil, isActive: Bool = false, isSuspended: Bool = false, tokenExpired: Bool = false,
@@ -85,10 +107,8 @@ struct TokenAccount: Codable, Identifiable {
         self.idToken = idToken
         self.expiresAt = expiresAt
         self.planType = planType
-        self.primaryUsedPercent = primaryUsedPercent
-        self.secondaryUsedPercent = secondaryUsedPercent
-        self.primaryResetAt = primaryResetAt
-        self.secondaryResetAt = secondaryResetAt
+        self.weeklyUsedPercent = weeklyUsedPercent
+        self.weeklyResetAt = weeklyResetAt
         self.rateLimitResetCreditsAvailableCount = rateLimitResetCreditsAvailableCount
         self.rateLimitResetCreditsExpiresAt = rateLimitResetCreditsExpiresAt
         self.lastChecked = lastChecked
@@ -101,26 +121,20 @@ struct TokenAccount: Codable, Identifiable {
     // MARK: - Computed
 
     var isBanned: Bool { isSuspended }
-    var primaryExhausted: Bool { primaryUsedPercent >= 100 }
-    var secondaryExhausted: Bool { secondaryUsedPercent >= 100 }
-    var quotaExhausted: Bool { primaryExhausted || secondaryExhausted }
+    var weeklyExhausted: Bool { weeklyUsedPercent >= 100 }
+    var quotaExhausted: Bool { weeklyExhausted }
     var isAvailable: Bool { !tokenExpired && !isBanned && !quotaExhausted }
 
     var usageStatus: UsageStatus {
         if isBanned { return .banned }
         if quotaExhausted { return .exceeded }
-        if primaryUsedPercent >= 80 || secondaryUsedPercent >= 80 { return .warning }
+        if weeklyUsedPercent >= 80 { return .warning }
         return .ok
     }
 
-    /// 5h 窗口重置时间点文字
-    var primaryResetDescription: String {
-        resetLabel(from: primaryResetAt)
-    }
-
-    /// 周窗口重置时间点文字
-    var secondaryResetDescription: String {
-        resetLabel(from: secondaryResetAt)
+    /// 7d 窗口重置时间点文字
+    var weeklyResetDescription: String {
+        resetLabel(from: weeklyResetAt)
     }
 
     private func resetLabel(from date: Date?) -> String {
@@ -137,28 +151,16 @@ struct TokenAccount: Codable, Identifiable {
         formatter.dateFormat = "MM-dd HH:mm"
         return formatter.string(from: date)
     }
+
+    private static func looksLikeWeeklyReset(_ resetAt: Date?, checkedAt: Date?) -> Bool {
+        guard let resetAt else { return false }
+        let reference = checkedAt ?? Date()
+        return resetAt.timeIntervalSince(reference) >= 24 * 60 * 60
+    }
 }
 
-enum UsageStatus {
+enum UsageStatus: Equatable {
     case ok, warning, exceeded, banned
-
-    var color: String {
-        switch self {
-        case .ok: return "green"
-        case .warning: return "yellow"
-        case .exceeded: return "orange"
-        case .banned: return "red"
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .ok: return "正常"
-        case .warning: return "即将用尽"
-        case .exceeded: return "额度耗尽"
-        case .banned: return "已停用"
-        }
-    }
 }
 
 struct TokenPool: Codable {

@@ -5,8 +5,6 @@ struct TokenStatsView: View {
     @ObservedObject var service: TokenStatsService = .shared
 
     var body: some View {
-        let _ = language.identity
-
         VStack(spacing: 8) {
             TokenRangeSegmentedControl(selection: Binding(
                 get: { service.range },

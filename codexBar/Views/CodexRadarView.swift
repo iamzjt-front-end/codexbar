@@ -240,7 +240,7 @@ struct CodexRadarView: View {
     }
 
     private func modelName(model: String?, effort: String?) -> String {
-        let modelText = model?.uppercased().replacingOccurrences(of: "GPT-", with: "GPT-") ?? "Codex"
+        let modelText = model?.uppercased() ?? "Codex"
         guard let effort, !effort.isEmpty else { return modelText }
         return "\(modelText) \(effort)"
     }

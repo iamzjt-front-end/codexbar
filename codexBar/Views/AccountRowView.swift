@@ -16,18 +16,11 @@ struct AccountRowView: View {
 
     var body: some View {
         let _ = language.identity
-        let primaryDisplayPercent = displayPercent(forUsedPercent: account.primaryUsedPercent)
-        let secondaryDisplayPercent = displayPercent(forUsedPercent: account.secondaryUsedPercent)
-        let primaryResetDescription = account.primaryResetDescription
-        let secondaryResetDescription = account.secondaryResetDescription
-        let showPrimaryReset = shouldShowResetTime(
-            description: primaryResetDescription,
-            usedPercent: account.primaryUsedPercent
+        let weeklyDisplayPercent = quotaDisplay.amountMode.displayPercent(
+            forUsedPercent: account.weeklyUsedPercent
         )
-        let showSecondaryReset = shouldShowResetTime(
-            description: secondaryResetDescription,
-            usedPercent: account.secondaryUsedPercent
-        )
+        let weeklyResetDescription = account.weeklyResetDescription
+        let showWeeklyReset = !weeklyResetDescription.isEmpty
 
         VStack(alignment: .leading, spacing: 4) {
             // Line 1: org name + plan badge + active mark + switch button
@@ -134,24 +127,13 @@ struct AccountRowView: View {
                     Spacer()
                 }
             } else {
-                // 额度耗尽时仍保留双列布局：100% 进度条以 danger 色填满，
-                // 重置时间显示在对应列下方，行高与可用状态保持一致。
-                HStack(alignment: .top, spacing: 8) {
-                    quotaColumn(
-                        label: "5h",
-                        displayPercent: primaryDisplayPercent,
-                        usedPercent: account.primaryUsedPercent,
-                        resetDescription: primaryResetDescription,
-                        showReset: showPrimaryReset
-                    )
-                    quotaColumn(
-                        label: "7d",
-                        displayPercent: secondaryDisplayPercent,
-                        usedPercent: account.secondaryUsedPercent,
-                        resetDescription: secondaryResetDescription,
-                        showReset: showSecondaryReset
-                    )
-                }
+                quotaColumn(
+                    label: "7d",
+                    displayPercent: weeklyDisplayPercent,
+                    usedPercent: account.weeklyUsedPercent,
+                    resetDescription: weeklyResetDescription,
+                    showReset: showWeeklyReset
+                )
             }
         }
         .padding(.vertical, 5)
@@ -296,19 +278,6 @@ struct AccountRowView: View {
 
     private func usageColor(_ percent: Double) -> Color {
         CodexStatusPalette.color(forUsedPercent: percent)
-    }
-
-    private func displayPercent(forUsedPercent usedPercent: Double) -> Double {
-        switch quotaDisplay.amountMode {
-        case .used:
-            return min(max(usedPercent, 0), 100)
-        case .remaining:
-            return min(max(100 - usedPercent, 0), 100)
-        }
-    }
-
-    private func shouldShowResetTime(description: String, usedPercent: Double) -> Bool {
-        !description.isEmpty && (quotaDisplay.alwaysShowResetTime || usedPercent >= 70)
     }
 
     private func quotaColumn(

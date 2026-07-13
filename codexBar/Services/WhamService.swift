@@ -34,7 +34,7 @@ class WhamService {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw WhamError.parseError
         }
-        return parseUsage(json)
+        return try parseUsage(json)
     }
 
     /// 查询官方 banked reset 次数和到期时间
@@ -178,33 +178,14 @@ class WhamService {
         try? await fetchResetCredits(account: account)
     }
 
-    private func parseUsage(_ json: [String: Any]) -> WhamUsageResult {
+    func parseUsage(_ json: [String: Any]) throws -> WhamUsageResult {
         let planType = json["plan_type"] as? String ?? "free"
-        var primaryUsedPercent: Double = 0
-        var secondaryUsedPercent: Double = 0
-        var primaryResetAt: Date? = nil
-        var secondaryResetAt: Date? = nil
         var rateLimitResetCreditsAvailableCount: Int?
         var rateLimitResetCreditsExpiresAt: Date?
 
-        if let rateLimit = json["rate_limit"] as? [String: Any] {
-
-            // primary_window = 5h 窗口，used_percent: 0=未用, 100=耗尽
-            if let primary = rateLimit["primary_window"] as? [String: Any] {
-                primaryUsedPercent = primary["used_percent"] as? Double ?? 0
-                if let ts = primary["reset_at"] as? TimeInterval {
-                    primaryResetAt = Date(timeIntervalSince1970: ts)
-                }
-            }
-
-            // secondary_window = 周额度，used_percent: 0=本周未用, 100=耗尽
-            if let secondary = rateLimit["secondary_window"] as? [String: Any] {
-                let used = secondary["used_percent"] as? Double ?? 0
-                secondaryUsedPercent = used
-                if let ts = secondary["reset_at"] as? TimeInterval {
-                    secondaryResetAt = Date(timeIntervalSince1970: ts)
-                }
-            }
+        guard let rateLimit = json["rate_limit"] as? [String: Any],
+              let weeklyWindow = try Self.weeklyWindow(from: rateLimit) else {
+            throw WhamError.parseError
         }
 
         if let resetCredits = json["rate_limit_reset_credits"] as? [String: Any] {
@@ -214,12 +195,41 @@ class WhamService {
 
         return WhamUsageResult(
             planType: planType,
-            primaryUsedPercent: primaryUsedPercent,
-            secondaryUsedPercent: secondaryUsedPercent,
-            primaryResetAt: primaryResetAt,
-            secondaryResetAt: secondaryResetAt,
+            weeklyUsedPercent: weeklyWindow.usedPercent,
+            weeklyResetAt: weeklyWindow.resetAt,
             rateLimitResetCreditsAvailableCount: rateLimitResetCreditsAvailableCount,
             rateLimitResetCreditsExpiresAt: rateLimitResetCreditsExpiresAt
+        )
+    }
+
+    private static func weeklyWindow(from rateLimit: [String: Any]) throws -> RateLimitWindow? {
+        let primary = try rateLimitWindow(from: rateLimit["primary_window"])
+        let secondary = try rateLimitWindow(from: rateLimit["secondary_window"])
+        let candidates = [primary, secondary].compactMap { $0 }
+
+        if let exactWeekly = candidates.first(where: { $0.limitWindowSeconds == RateLimitWindow.weeklySeconds }) {
+            return exactWeekly
+        }
+
+        // 兼容旧响应未携带 limit_window_seconds 的情况：旧双窗口的 secondary 是周额度；
+        // 单窗口响应则只能使用唯一窗口。只要服务端提供了其他明确时长，就拒绝猜测。
+        guard candidates.allSatisfy({ $0.limitWindowSeconds == nil }) else {
+            return nil
+        }
+        return secondary ?? (candidates.count == 1 ? primary : nil)
+    }
+
+    private static func rateLimitWindow(from value: Any?) throws -> RateLimitWindow? {
+        guard let json = value as? [String: Any] else { return nil }
+        guard let usedPercent = doubleValue(json["used_percent"]), usedPercent.isFinite else {
+            throw WhamError.parseError
+        }
+        let resetAt = dateValue(json["reset_at"])
+        let limitWindowSeconds = intValue(json["limit_window_seconds"])
+        return RateLimitWindow(
+            usedPercent: min(max(usedPercent, 0), 100),
+            resetAt: resetAt,
+            limitWindowSeconds: limitWindowSeconds
         )
     }
 
@@ -259,17 +269,14 @@ class WhamService {
 
     @MainActor
     private static func updatedAccount(_ account: TokenAccount, with result: WhamUsageResult, orgName: String?) -> TokenAccount {
-        let nextPrimaryResetAt = result.primaryResetAt ?? futureDate(account.primaryResetAt)
-        let nextSecondaryResetAt = result.secondaryResetAt ?? futureDate(account.secondaryResetAt)
+        let nextWeeklyResetAt = result.weeklyResetAt ?? futureDate(account.weeklyResetAt)
 
         var updated = account
         updated.tokenExpired = false
         updated.isSuspended = false
         updated.planType = result.planType
-        updated.primaryUsedPercent = result.primaryUsedPercent
-        updated.secondaryUsedPercent = result.secondaryUsedPercent
-        updated.primaryResetAt = nextPrimaryResetAt
-        updated.secondaryResetAt = nextSecondaryResetAt
+        updated.weeklyUsedPercent = result.weeklyUsedPercent
+        updated.weeklyResetAt = nextWeeklyResetAt
         updated.rateLimitResetCreditsAvailableCount = result.rateLimitResetCreditsAvailableCount
         if let count = result.rateLimitResetCreditsAvailableCount, count > 0 {
             updated.rateLimitResetCreditsExpiresAt = result.rateLimitResetCreditsExpiresAt ?? futureDate(account.rateLimitResetCreditsExpiresAt)
@@ -426,10 +433,8 @@ class WhamService {
 
 struct WhamUsageResult {
     let planType: String
-    let primaryUsedPercent: Double
-    let secondaryUsedPercent: Double
-    let primaryResetAt: Date?
-    let secondaryResetAt: Date?
+    let weeklyUsedPercent: Double
+    let weeklyResetAt: Date?
     let rateLimitResetCreditsAvailableCount: Int?
     let rateLimitResetCreditsExpiresAt: Date?
 
@@ -437,14 +442,20 @@ struct WhamUsageResult {
         guard let resetCredits else { return self }
         return WhamUsageResult(
             planType: planType,
-            primaryUsedPercent: primaryUsedPercent,
-            secondaryUsedPercent: secondaryUsedPercent,
-            primaryResetAt: primaryResetAt,
-            secondaryResetAt: secondaryResetAt,
+            weeklyUsedPercent: weeklyUsedPercent,
+            weeklyResetAt: weeklyResetAt,
             rateLimitResetCreditsAvailableCount: resetCredits.availableCount ?? rateLimitResetCreditsAvailableCount,
             rateLimitResetCreditsExpiresAt: resetCredits.expiresAt ?? rateLimitResetCreditsExpiresAt
         )
     }
+}
+
+private struct RateLimitWindow {
+    static let weeklySeconds = 7 * 24 * 60 * 60
+
+    let usedPercent: Double
+    let resetAt: Date?
+    let limitWindowSeconds: Int?
 }
 
 struct WhamResetCreditsResult {
@@ -459,7 +470,7 @@ struct WhamResetCreditsResult {
     }
 }
 
-enum WhamError: LocalizedError {
+enum WhamError: LocalizedError, Equatable {
     case invalidResponse, unauthorized, forbidden, parseError
     case httpError(Int)
 

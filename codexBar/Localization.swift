@@ -59,8 +59,6 @@ enum L {
     }
 
     // MARK: - Status Bar
-    static var weeklyLimit: String { zh ? "周限额" : "Weekly Limit" }
-    static var hourLimit: String   { zh ? "5h限额" : "5h Limit" }
     static var codexSessionOffline: String { zh ? "Codex 未连接" : "Codex offline" }
     static var codexSessionReady: String { zh ? "Codex 已就绪" : "Codex ready" }
     static var codexSessionRunningGeneric: String { zh ? "Codex 正在运行" : "Codex running" }
@@ -133,12 +131,6 @@ enum L {
     static func quotaAmountModeHelp(_ detail: String) -> String {
         zh ? "额度口径：\(detail)" : "Quota metric: \(detail)"
     }
-    static var resetTimeDisplayAlways: String { zh ? "始终" : "Always" }
-    static var resetTimeDisplayNearLimit: String { zh ? "临近时" : "Near limit" }
-    static var alwaysShowResetTime: String { zh ? "始终显示重置时间" : "Always show reset time" }
-    static func resetTimeDisplayHelp(_ detail: String) -> String {
-        zh ? "重置时间：\(detail)" : "Reset time: \(detail)"
-    }
     static var statusLightsVisible: String { zh ? "显示" : "Shown" }
     static var statusLightsHidden: String { zh ? "隐藏" : "Hidden" }
     static func statusLightsDisplayHelp(_ detail: String) -> String {
@@ -155,26 +147,11 @@ enum L {
             ? "官方 banked Codex rate-limit reset 次数；会额外查询重置机会到期时间，临近 3 天时提示。"
             : "Official banked Codex rate-limit resets. The app also checks reset-credit expiration and warns within 3 days."
     }
-    static func resetCreditsExpireSoon(_ time: String) -> String {
-        zh ? "重置机会即将过期：\(time)" : "Reset credits expire soon: \(time)"
-    }
-    static var resetCreditsExpireSoonHelp: String {
-        zh ? "官方返回了重置机会过期时间，距离过期不足 3 天。" : "The official response includes a reset-credit expiration less than 3 days away."
-    }
     static func resetCreditsExpiresAt(_ time: String) -> String {
         zh ? "重置机会到期：\(time)" : "Reset credits expire: \(time)"
     }
     static var resetCreditsExpiresAtHelp: String {
         zh ? "官方重置机会到期时间。" : "Official reset-credit expiration time."
-    }
-    static func resetCreditsExpireInMinutes(_ minutes: Int) -> String {
-        zh ? "\(minutes) 分钟内" : "in \(minutes) min"
-    }
-    static func resetCreditsExpireInHours(_ hours: Int) -> String {
-        zh ? "\(hours) 小时内" : "in \(hours) hr"
-    }
-    static func resetCreditsExpireInDays(_ days: Int) -> String {
-        zh ? "\(days) 天内" : "in \(days) day\(days == 1 ? "" : "s")"
     }
     static var addAccount: String      { zh ? "授权账号"            : "Authorize Account" }
     static var importAccount: String   { zh ? "导入账号 JSON"       : "Import Accounts JSON" }
@@ -182,21 +159,10 @@ enum L {
         zh ? "已导入 \(n) 个账号" : "Imported \(n) account(s)"
     }
     static var quit: String            { zh ? "退出"               : "Quit" }
-    static var switchAccount: String    { zh ? "切换账号"            : "Switch Account" }
-    static var switchTitle: String     { zh ? "切换账号"            : "Switch Account" }
-    static var continueRestart: String { zh ? "继续"               : "Continue" }
     static var cancel: String          { zh ? "取消"               : "Cancel" }
     static var justUpdated: String     { zh ? "刚刚更新"            : "Just updated" }
     static var refreshing: String      { zh ? "刷新中"              : "Refreshing" }
     static var refreshed: String       { zh ? "已刷新"              : "Refreshed" }
-    static var restartCodexTitle: String {
-        zh ? "切换账号需要重启 Codex" : "Switching Account Requires Restarting Codex"
-    }
-    static var restartCodexInfo: String {
-        zh
-            ? "切换账号需要关闭并重新打开 Codex.app 才能生效。是否继续？"
-            : "Switching account requires quitting and reopening Codex.app to take effect. Continue?"
-    }
     static var switchModeTitle: String {
         zh ? "选择切换方式" : "Choose How to Switch"
     }
@@ -210,10 +176,7 @@ enum L {
     static var cannotActivateNoIdToken: String {
         zh ? "该账号缺少 id_token 且无法续期，请重新授权后再激活" : "This account has no id_token and could not refresh; re-authorize before activating"
     }
-    static var forceQuitAndReopen: String { zh ? "强制退出并重新打开" : "Force Quit & Reopen" }
-    static var forceQuitOnly: String    { zh ? "仅强制退出" : "Force Quit Only" }
     static var later: String            { zh ? "稍后" : "Later" }
-    static var restartLater: String     { zh ? "稍后手动重启" : "Later" }
     static var checkForUpdates: String  { zh ? "检查更新" : "Check for Updates" }
     static var retry: String            { zh ? "重试" : "Retry" }
     static var downloadUpdate: String   { zh ? "下载" : "Download" }
@@ -321,75 +284,20 @@ enum L {
     static func hoursAgo(_ h: Int) -> String {
         zh ? "\(h) 小时前更新" : "Updated \(h) hr ago"
     }
-    static var switchWarningTitle: String {
-        zh ? "⚠️ 实验性功能 — 账号切换" : "⚠️ Experimental — Account Switch"
-    }
-    static func switchConfirm(_ name: String) -> String { switchWarning(name) }
-    static func switchConfirmMsg(_ name: String) -> String { switchWarning(name) }
-    static func switchWarning(_ name: String) -> String {
-        zh
-            ? "⚠️ 实验性功能\n\n将切换到「\(name)」。\n\n此功能通过直接修改配置文件实现辅助切换，需要退出整个 Codex.app 才能生效。退出过程中可能导致数据丢失！\n\n如果你正在使用 subagent，强烈建议通过软件内的退出登录功能重新登录其他账号，而非使用此切换方案。"
-            : "⚠️ Experimental Feature\n\nSwitching to \"\(name)\".\n\nThis feature works by modifying the config file directly. Codex.app must be fully quit to apply the change, which may cause data loss.\n\nIf you are using subagents, it is strongly recommended to log out from within Codex.app and log in with another account instead."
-    }
-
-    // MARK: - Auto switch
-    static var autoSwitchTitle: String {
-        zh ? "已自动切换账号" : "Account Auto-Switched"
-    }
-    static func autoSwitchBody(_ from: String, _ to: String) -> String {
-        zh
-            ? "「\(from)」额度不足，已自动切换至「\(to)」"
-            : "Quota low on \"\(from)\", switched to \"\(to)\""
-    }
-    static var autoSwitchNoCandidates: String {
-        zh
-            ? "所有账号额度不足或不可用，请手动处理"
-            : "All accounts are low or unavailable, please take action"
-    }
-
     // MARK: - AccountRowView
     static var reauth: String          { zh ? "重新授权"     : "Re-authorize" }
     static var switchBtn: String       { zh ? "切换"         : "Switch" }
-    static var tokenExpiredMsg: String { zh ? "Token 已过期，请重新授权" : "Token expired, please re-authorize" }
-    static var bannedMsg: String       { zh ? "账号已停用"   : "Account suspended" }
-    static var deleteBtn: String       { zh ? "删除"         : "Delete" }
-    static var deleteConfirm: String   { zh ? "删除"         : "Delete" }
-
-    static func deletePrompt(_ name: String) -> String {
+    static func confirmDelete(_ name: String) -> String {
         zh ? "确认删除 \(name)？" : "Delete \(name)?"
     }
-    static func confirmDelete(_ name: String) -> String { deletePrompt(name) }
     static var delete: String         { zh ? "删除"     : "Delete" }
     static var tokenExpiredHint: String { zh ? "Token 已过期，请重新授权" : "Token expired, please re-authorize" }
     static var accountSuspended: String { zh ? "账号已停用" : "Account suspended" }
-    static var weeklyExhausted: String  { zh ? "周额度耗尽" : "Weekly quota exhausted" }
-    static var primaryExhausted: String { zh ? "5h 额度耗尽" : "5h quota exhausted" }
-
-    // MARK: - TokenAccount status
-    static var statusOk: String       { zh ? "正常"     : "OK" }
-    static var statusWarning: String  { zh ? "即将用尽" : "Warning" }
-    static var statusExceeded: String { zh ? "额度耗尽" : "Exceeded" }
-    static var statusBanned: String   { zh ? "已停用"   : "Suspended" }
 
     // MARK: - Reset countdown
     static var resetSoon: String { zh ? "即将重置" : "Resetting soon" }
-    static func resetAt(_ time: String) -> String {
-        zh ? "\(time) 重置" : "Resets at \(time)"
-    }
-    static func resetTomorrowAt(_ time: String) -> String {
-        zh ? "明天 \(time) 重置" : "Resets tomorrow at \(time)"
-    }
     static func resetAtDate(_ dateTime: String) -> String {
         zh ? "\(dateTime) 重置" : "Resets \(dateTime)"
-    }
-    static func resetInMin(_ m: Int) -> String {
-        zh ? "\(m) 分钟后重置" : "Resets in \(m) min"
-    }
-    static func resetInHr(_ h: Int, _ m: Int) -> String {
-        zh ? "\(h) 小时 \(m) 分后重置" : "Resets in \(h)h \(m)m"
-    }
-    static func resetInDay(_ d: Int, _ h: Int) -> String {
-        zh ? "\(d) 天 \(h) 小时后重置" : "Resets in \(d)d \(h)h"
     }
 
     // MARK: - Token stats
@@ -400,8 +308,6 @@ enum L {
     static func tokenThreadCount(_ n: Int) -> String {
         zh ? "\(n) 个会话" : "\(n) threads"
     }
-    static var heatmapLess: String { zh ? "少" : "Less" }
-    static var heatmapMore: String { zh ? "多" : "More" }
 
     // MARK: - CodexRadar
     static func codexResetWindowOpen(_ resetTime: String) -> String {
@@ -421,10 +327,6 @@ enum L {
         }
         return "\(date) \(passed)/\(tasks) passed, baseline \(baseline)/\(tasks)"
     }
-    static var modelQualityMetricCost: String { zh ? "费用" : "Cost" }
-    static var modelQualityMetricTime: String { zh ? "耗时" : "Time" }
-    static var modelQualityMetricCache: String { zh ? "缓存" : "Cache" }
-    static var modelQualityMetricTokens: String { zh ? "Tokens" : "Tokens" }
     static var modelQualityReading: String { zh ? "正在读取 codexradar.com" : "Reading codexradar.com" }
     static var modelQualityNoData: String { zh ? "暂无模型质量数据" : "No model quality data" }
 }

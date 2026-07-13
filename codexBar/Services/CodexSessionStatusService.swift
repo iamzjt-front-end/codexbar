@@ -10,7 +10,6 @@ enum CodexSessionLight: String, Codable {
 }
 
 struct CodexSessionStatusPayload: Decodable {
-    var threadId: String?
     var state: String?
     var phase: String?
     var title: String?
@@ -25,14 +24,12 @@ struct CodexSessionStatusPayload: Decodable {
 }
 
 struct CodexSessionStatus {
-    var threadId: String?
     var light: CodexSessionLight = .offline
     var phase: String?
     var title: String?
     var updatedAt: Date?
     var source: String?
     var detail: String?
-    var isStale = false
 }
 
 @MainActor
@@ -111,14 +108,12 @@ final class CodexSessionStatusService: ObservableObject {
         }
 
         status = CodexSessionStatus(
-            threadId: payload.threadId,
             light: payload.light,
             phase: payload.phase,
             title: payload.title,
             updatedAt: Self.parseDate(payload.updatedAt) ?? modifiedAt,
             source: payload.source,
-            detail: payload.detail,
-            isStale: false
+            detail: payload.detail
         )
         updateStaleness()
     }
@@ -137,15 +132,9 @@ final class CodexSessionStatusService: ObservableObject {
             shouldExpire = false
         }
 
-        guard shouldExpire else {
-            if status.isStale {
-                status.isStale = false
-            }
-            return
-        }
+        guard shouldExpire else { return }
 
         status.light = .offline
-        status.isStale = true
         status.detail = L.codexSessionStatusStale
     }
 

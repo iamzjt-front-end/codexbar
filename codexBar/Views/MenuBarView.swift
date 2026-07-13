@@ -1,7 +1,6 @@
 import SwiftUI
 import AppKit
 import Combine
-import UserNotifications
 import UniformTypeIdentifiers
 
 struct MenuBarView: View {
@@ -440,7 +439,7 @@ struct MenuBarView: View {
             now = tickDate
             guard menuVisible,
                   let active = store.accounts.first(where: { $0.isActive }),
-                  !active.secondaryExhausted else { return }
+                  !active.weeklyExhausted else { return }
             guard tickDate.timeIntervalSince(lastVisibleRefresh) >= refreshFrequency.selection.visibleInterval else { return }
             lastVisibleRefresh = tickDate
             Task {
@@ -521,7 +520,7 @@ struct MenuBarView: View {
             return
         }
         if resp == .alertSecondButtonReturn {
-            forceQuitCodex(running, reopen: true)
+            forceQuitCodexAndReopen(running)
         }
     }
 
@@ -543,42 +542,23 @@ struct MenuBarView: View {
         }
     }
 
-    private func sendNotification(title: String, body: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = .default
-            let request = UNNotificationRequest(
-                identifier: "codexbar-\(Date().timeIntervalSince1970)",
-                content: content,
-                trigger: nil
-            )
-            center.add(request)
-        }
-    }
-
-    private func forceQuitCodex(_ running: [NSRunningApplication], reopen: Bool) {
+    private func forceQuitCodexAndReopen(_ running: [NSRunningApplication]) {
         let ws = NSWorkspace.shared
 
-        if reopen {
-            guard let url = ws.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
-                running.forEach { $0.forceTerminate() }
-                return
-            }
-            var observer: NSObjectProtocol?
-            observer = ws.notificationCenter.addObserver(
-                forName: NSWorkspace.didTerminateApplicationNotification,
-                object: nil,
-                queue: .main
-            ) { note in
-                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                      app.bundleIdentifier == "com.openai.codex" else { return }
-                ws.notificationCenter.removeObserver(observer!)
-                ws.open(url)
-            }
+        guard let url = ws.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
+            running.forEach { $0.forceTerminate() }
+            return
+        }
+        var observer: NSObjectProtocol?
+        observer = ws.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == "com.openai.codex" else { return }
+            ws.notificationCenter.removeObserver(observer!)
+            ws.open(url)
         }
 
         running.forEach { $0.forceTerminate() }

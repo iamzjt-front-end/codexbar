@@ -13,17 +13,11 @@ final class CodexRadarService: ObservableObject {
     private let statusURL = URL(string: "https://codexradar.com/current.json")!
     private let websiteURL = URL(string: "https://codexradar.com/")!
     private let refreshInterval: TimeInterval = 15 * 60
-    private let staleInterval: TimeInterval = 6 * 60 * 60
     private var timer: Timer?
 
     private init() {}
 
     var homepageURL: URL { websiteURL }
-
-    var isStale: Bool {
-        guard let lastFetchAt else { return snapshot == nil && lastError != nil }
-        return Date().timeIntervalSince(lastFetchAt) > staleInterval
-    }
 
     var needsVisibleRefresh: Bool {
         guard !isRefreshing else { return false }
@@ -226,13 +220,8 @@ enum CodexRadarHTMLParser {
             status: status(for: chip.score),
             passed: passParts.passed,
             tasks: passParts.tasks,
-            totalTokens: tokenCount(from: metrics["总tokens"]?[chip.key]),
-            wallSeconds: seconds(from: metrics["耗时"]?[chip.key]),
-            wallTimeHuman: metrics["耗时"]?[chip.key],
             model: parts.model,
-            reasoningEffort: parts.effort,
-            validTasks: passParts.tasks,
-            costUSD: cost(from: metrics["费用"]?[chip.key])
+            reasoningEffort: parts.effort
         )
     }
 
@@ -241,49 +230,6 @@ enum CodexRadarHTMLParser {
         let parts = value.split(separator: "/", maxSplits: 1).map { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         guard parts.count == 2 else { return (nil, nil) }
         return (parts[0], parts[1])
-    }
-
-    private static func tokenCount(from value: String?) -> Int? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let multiplier: Double
-        let numeric: String
-        if trimmed.uppercased().hasSuffix("M") {
-            multiplier = 1_000_000
-            numeric = String(trimmed.dropLast())
-        } else if trimmed.uppercased().hasSuffix("K") {
-            multiplier = 1_000
-            numeric = String(trimmed.dropLast())
-        } else {
-            multiplier = 1
-            numeric = trimmed
-        }
-        guard let number = Double(numeric.replacingOccurrences(of: ",", with: "")) else { return nil }
-        return Int((number * multiplier).rounded())
-    }
-
-    private static func seconds(from value: String?) -> Int? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.lowercased().hasSuffix("h"),
-           let hours = Double(trimmed.dropLast()) {
-            return Int((hours * 60 * 60).rounded())
-        }
-        if trimmed.lowercased().hasSuffix("m"),
-           let minutes = Double(trimmed.dropLast()) {
-            return Int((minutes * 60).rounded())
-        }
-        return nil
-    }
-
-    private static func cost(from value: String?) -> Double? {
-        guard let value else { return nil }
-        return Double(
-            value
-                .replacingOccurrences(of: "$", with: "")
-                .replacingOccurrences(of: ",", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        )
     }
 
     private static func status(for score: Double) -> String {
@@ -388,10 +334,8 @@ private enum DateFormatters {
 
 struct CodexRadarSnapshot: Decodable {
     let monitoredAt: Date?
-    let monitoredAtRaw: String?
     let windowOpen: Bool?
     let status: String?
-    let recommendedAction: String?
     let window: CodexRadarResetWindow?
     var modelIQ: CodexRadarModelIQ?
 
@@ -399,30 +343,15 @@ struct CodexRadarSnapshot: Decodable {
         case monitoredAt = "monitored_at"
         case windowOpen = "window_open"
         case status
-        case recommendedAction = "recommended_action"
         case window
         case modelIQ = "model_iq"
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        monitoredAt = try container.decodeIfPresent(Date.self, forKey: .monitoredAt)
-        monitoredAtRaw = try container.decodeIfPresent(String.self, forKey: .monitoredAt)
-        windowOpen = try container.decodeIfPresent(Bool.self, forKey: .windowOpen)
-        status = try container.decodeIfPresent(String.self, forKey: .status)
-        recommendedAction = try container.decodeIfPresent(String.self, forKey: .recommendedAction)
-        window = try container.decodeIfPresent(CodexRadarResetWindow.self, forKey: .window)
-        modelIQ = try container.decodeIfPresent(CodexRadarModelIQ.self, forKey: .modelIQ)
     }
 }
 
 struct CodexRadarResetWindow: Decodable {
     let open: Bool?
     let status: String?
-    let action: String?
     let message: String?
-    let title: String?
-    let scope: String?
     let openedAt: Date?
     let closedAt: Date?
     let sourceURL: URL?
@@ -430,10 +359,7 @@ struct CodexRadarResetWindow: Decodable {
     enum CodingKeys: String, CodingKey {
         case open
         case status
-        case action
         case message
-        case title
-        case scope
         case openedAt = "opened_at"
         case closedAt = "closed_at"
         case sourceURL = "source_url"
@@ -443,10 +369,7 @@ struct CodexRadarResetWindow: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         open = try container.decodeIfPresent(Bool.self, forKey: .open)
         status = try container.decodeIfPresent(String.self, forKey: .status)
-        action = try container.decodeIfPresent(String.self, forKey: .action)
         message = try container.decodeIfPresent(String.self, forKey: .message)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        scope = try container.decodeIfPresent(String.self, forKey: .scope)
         openedAt = try container.decodeIfPresent(Date.self, forKey: .openedAt)
         closedAt = try container.decodeIfPresent(Date.self, forKey: .closedAt)
 
@@ -516,16 +439,8 @@ struct CodexRadarModelIQEntry: Decodable {
     let status: String?
     let passed: Int?
     let tasks: Int?
-    let totalTokens: Int?
-    let inputTokens: Int?
-    let cachedInputTokens: Int?
-    let outputTokens: Int?
-    let wallSeconds: Int?
-    let wallTimeHuman: String?
     let model: String?
     let reasoningEffort: String?
-    let validTasks: Int?
-    let costUSD: Double?
 
     enum CodingKeys: String, CodingKey {
         case date
@@ -533,16 +448,8 @@ struct CodexRadarModelIQEntry: Decodable {
         case status
         case passed
         case tasks
-        case totalTokens = "total_tokens"
-        case inputTokens = "input_tokens"
-        case cachedInputTokens = "cached_input_tokens"
-        case outputTokens = "output_tokens"
-        case wallSeconds = "wall_seconds"
-        case wallTimeHuman = "wall_time_human"
         case model
         case reasoningEffort = "reasoning_effort"
-        case validTasks = "valid_tasks"
-        case costUSD = "cost_usd"
     }
 
     init(
@@ -551,36 +458,15 @@ struct CodexRadarModelIQEntry: Decodable {
         status: String? = nil,
         passed: Int? = nil,
         tasks: Int? = nil,
-        totalTokens: Int? = nil,
-        inputTokens: Int? = nil,
-        cachedInputTokens: Int? = nil,
-        outputTokens: Int? = nil,
-        wallSeconds: Int? = nil,
-        wallTimeHuman: String? = nil,
         model: String? = nil,
-        reasoningEffort: String? = nil,
-        validTasks: Int? = nil,
-        costUSD: Double? = nil
+        reasoningEffort: String? = nil
     ) {
         self.date = date
         self.score = score
         self.status = status
         self.passed = passed
         self.tasks = tasks
-        self.totalTokens = totalTokens
-        self.inputTokens = inputTokens
-        self.cachedInputTokens = cachedInputTokens
-        self.outputTokens = outputTokens
-        self.wallSeconds = wallSeconds
-        self.wallTimeHuman = wallTimeHuman
         self.model = model
         self.reasoningEffort = reasoningEffort
-        self.validTasks = validTasks
-        self.costUSD = costUSD
-    }
-
-    var cacheHitPercent: Double? {
-        guard let cachedInputTokens, let inputTokens, inputTokens > 0 else { return nil }
-        return Double(cachedInputTokens) / Double(inputTokens) * 100
     }
 }

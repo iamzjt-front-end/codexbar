@@ -41,6 +41,15 @@ enum QuotaAmountMode: String, CaseIterable, Identifiable {
         case .remaining: return L.quotaAmountRemaining
         }
     }
+
+    func displayPercent(forUsedPercent usedPercent: Double) -> Double {
+        switch self {
+        case .used:
+            return min(max(usedPercent, 0), 100)
+        case .remaining:
+            return min(max(100 - usedPercent, 0), 100)
+        }
+    }
 }
 
 @MainActor
@@ -49,12 +58,10 @@ final class QuotaDisplaySettings: ObservableObject {
 
     @Published private(set) var mode: QuotaDisplayMode
     @Published private(set) var amountMode: QuotaAmountMode
-    @Published private(set) var alwaysShowResetTime: Bool
     @Published private(set) var showStatusLights: Bool
 
     private let modeDefaultsKey = "quotaDisplayMode"
     private let amountDefaultsKey = "quotaAmountMode"
-    private let alwaysShowResetTimeDefaultsKey = "quotaAlwaysShowResetTime"
     private let showStatusLightsDefaultsKey = "quotaShowStatusLights"
 
     private init() {
@@ -78,8 +85,6 @@ final class QuotaDisplaySettings: ObservableObject {
 
         mode = initialMode
         amountMode = initialAmountMode
-        alwaysShowResetTime = true
-        UserDefaults.standard.set(true, forKey: alwaysShowResetTimeDefaultsKey)
 
         if UserDefaults.standard.object(forKey: showStatusLightsDefaultsKey) == nil {
             showStatusLights = true
@@ -95,10 +100,6 @@ final class QuotaDisplaySettings: ObservableObject {
 
     var amountHelpText: String {
         L.quotaAmountModeHelp(amountMode.label)
-    }
-
-    var resetTimeHelpText: String {
-        L.resetTimeDisplayHelp(alwaysShowResetTime ? L.resetTimeDisplayAlways : L.resetTimeDisplayNearLimit)
     }
 
     var statusLightsHelpText: String {

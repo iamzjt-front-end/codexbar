@@ -8,7 +8,18 @@
 
 /* Begin PBXFileReference section */
 		C0C16B462F7423BE00A2A16F /* codexAppBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = codexAppBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0C16B692F74300000A2A16F /* codexAppBarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = codexAppBarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		C0C16B6A2F74300000A2A16F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0C16B3E2F7423BE00A2A16F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0C16B452F7423BE00A2A16F;
+			remoteInfo = codexBar;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		C0C16B682F74282500A2A16F /* Exceptions for "codexBar" folder in "codexBar" target */ = {
@@ -29,10 +40,22 @@
 			path = codexBar;
 			sourceTree = "<group>";
 		};
+		C0C16B6C2F74300000A2A16F /* codexBarTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = codexBarTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C0C16B432F7423BE00A2A16F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0C16B6D2F74300000A2A16F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				C0C16B482F7423BE00A2A16F /* codexBar */,
+				C0C16B6C2F74300000A2A16F /* codexBarTests */,
 				C0C16B472F7423BE00A2A16F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				C0C16B462F7423BE00A2A16F /* codexAppBar.app */,
+				C0C16B692F74300000A2A16F /* codexAppBarTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,6 +108,29 @@
 			productReference = C0C16B462F7423BE00A2A16F /* codexAppBar.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C0C16B702F74300000A2A16F /* codexBarTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0C16B752F74300000A2A16F /* Build configuration list for PBXNativeTarget "codexBarTests" */;
+			buildPhases = (
+				C0C16B6F2F74300000A2A16F /* Sources */,
+				C0C16B6D2F74300000A2A16F /* Frameworks */,
+				C0C16B6E2F74300000A2A16F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C0C16B6B2F74300000A2A16F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C0C16B6C2F74300000A2A16F /* codexBarTests */,
+			);
+			name = codexBarTests;
+			packageProductDependencies = (
+			);
+			productName = codexBarTests;
+			productReference = C0C16B692F74300000A2A16F /* codexAppBarTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -95,6 +143,10 @@
 				TargetAttributes = {
 					C0C16B452F7423BE00A2A16F = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					C0C16B702F74300000A2A16F = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = C0C16B452F7423BE00A2A16F;
 					};
 				};
 			};
@@ -113,12 +165,20 @@
 			projectRoot = "";
 			targets = (
 				C0C16B452F7423BE00A2A16F /* codexBar */,
+				C0C16B702F74300000A2A16F /* codexBarTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		C0C16B442F7423BE00A2A16F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0C16B6E2F74300000A2A16F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -135,7 +195,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0C16B6F2F74300000A2A16F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C0C16B6B2F74300000A2A16F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0C16B452F7423BE00A2A16F /* codexBar */;
+			targetProxy = C0C16B6A2F74300000A2A16F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C0C16B4F2F7423BF00A2A16F /* Debug */ = {
@@ -332,6 +407,38 @@
 			};
 			name = Release;
 		};
+		C0C16B732F74300000A2A16F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = MLR4HT4UC8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_BUNDLE_IDENTIFIER = xmasdong.codexAppBarTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/codexAppBar.app/Contents/MacOS/codexAppBar";
+			};
+			name = Debug;
+		};
+		C0C16B742F74300000A2A16F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = MLR4HT4UC8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_BUNDLE_IDENTIFIER = xmasdong.codexAppBarTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/codexAppBar.app/Contents/MacOS/codexAppBar";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -349,6 +456,15 @@
 			buildConfigurations = (
 				C0C16B522F7423BF00A2A16F /* Debug */,
 				C0C16B532F7423BF00A2A16F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0C16B752F74300000A2A16F /* Build configuration list for PBXNativeTarget "codexBarTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0C16B732F74300000A2A16F /* Debug */,
+				C0C16B742F74300000A2A16F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -126,27 +126,4 @@ struct CodexStatsDB {
         } ?? [:]
     }
 
-    /// 按 model 分组的 token 用量（updated_at ≥ since），降序，最多 limit 条。
-    nonisolated static func byModel(since: Date, limit: Int = 5) -> [(model: String, tokens: Int)] {
-        readFromCurrentDB { db in
-            var rows: [(String, Int)] = []
-            let sql = """
-            SELECT COALESCE(NULLIF(model, ''), model_provider) m, SUM(tokens_used) t
-            FROM threads WHERE updated_at >= ?
-            GROUP BY m ORDER BY t DESC LIMIT ?;
-            """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-            defer { sqlite3_finalize(stmt) }
-
-            sqlite3_bind_int64(stmt, 1, Int64(since.timeIntervalSince1970))
-            sqlite3_bind_int(stmt, 2, Int32(limit))
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let model = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? "unknown"
-                let tokens = Int(sqlite3_column_int64(stmt, 1))
-                rows.append((model, tokens))
-            }
-            return rows
-        } ?? []
-    }
 }

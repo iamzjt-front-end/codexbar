@@ -8,6 +8,7 @@ xcuserdata/
 
 # Build
 build/
+build-preview/
 DerivedData/
 *.ipa
 *.dSYM.zip
@@ -17,6 +18,10 @@ DerivedData/
 .build/
 .swiftpm/
 *.resolved
+
+# Python
+__pycache__/
+*.pyc
 
 # CocoaPods
 Pods/
