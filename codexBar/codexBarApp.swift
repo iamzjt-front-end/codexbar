@@ -443,20 +443,26 @@ private final class StatusBarCapsuleView: NSView {
 }
 
 private final class StatusQuotaBarsView: NSView {
-    static let preferredWidth: CGFloat = 88
-
-    private static let labelWidth: CGFloat = 13
-    private static let trackLabelGap: CGFloat = 2.5
+    private static let label = "7d"
+    private static let itemGap: CGFloat = 4
     private static let trackWidth: CGFloat = 44
-    private static let valueGap: CGFloat = 3.5
-    private static let valueWidth: CGFloat = 25
     private static let trackHeight: CGFloat = 3.2
-    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 7.5, weight: .medium)
-    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 8.0, weight: .semibold)
+    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold)
+    private static let maximumLabelWidth = ceil(textSize(label, font: labelFont).width)
+    private static let maximumValueWidth = ceil(textSize("100%", font: valueFont).width)
     private static let labelTextYOffset: CGFloat = -0.2
     private static let valueTextYOffset: CGFloat = -0.2
     private static let fillAnimationKey = "codexbar.quotaFill"
     private static let fillAnimationDuration: CFTimeInterval = 0.38
+
+    static let preferredWidth = maximumLabelWidth + itemGap + trackWidth + itemGap + maximumValueWidth
+
+    private struct RowLayout {
+        let labelRect: NSRect
+        let trackRect: NSRect
+        let valueRect: NSRect
+    }
 
     private let weeklyFillLayer = CAShapeLayer()
     private var weeklyDisplayPercent: Double = 0
@@ -508,53 +514,27 @@ private final class StatusQuotaBarsView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawRow(
-            label: "7d",
+            label: Self.label,
             displayPercent: weeklyDisplayPercent,
             centerY: bounds.midY
         )
     }
 
     private func drawRow(label: String, displayPercent: Double, centerY: CGFloat) {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .right
         let labelAttributes: [NSAttributedString.Key: Any] = [
             .font: Self.labelFont,
-            .foregroundColor: NSColor.white.withAlphaComponent(0.76),
-            .paragraphStyle: paragraph
+            .foregroundColor: NSColor.white.withAlphaComponent(0.9)
         ]
-        let labelSize = (label as NSString).size(withAttributes: labelAttributes)
-        let labelRect = NSRect(
-            x: 0,
-            y: centerY - labelSize.height / 2 + Self.labelTextYOffset,
-            width: Self.labelWidth,
-            height: labelSize.height
-        )
-        (label as NSString).draw(in: labelRect, withAttributes: labelAttributes)
-
-        let trackRect = NSRect(
-            x: Self.trackX,
-            y: centerY - Self.trackHeight / 2,
-            width: Self.trackWidth,
-            height: Self.trackHeight
-        )
-        drawPill(trackRect, color: NSColor.white.withAlphaComponent(0.18))
-
-        let value = "\(Int(Self.clamped(displayPercent)))%"
-        let valueParagraph = NSMutableParagraphStyle()
-        valueParagraph.alignment = .left
+        let value = Self.valueText(for: displayPercent)
         let valueAttributes: [NSAttributedString.Key: Any] = [
             .font: Self.valueFont,
-            .foregroundColor: NSColor.white.withAlphaComponent(0.92),
-            .paragraphStyle: valueParagraph
+            .foregroundColor: NSColor.white.withAlphaComponent(0.98)
         ]
-        let valueSize = (value as NSString).size(withAttributes: valueAttributes)
-        let valueRect = NSRect(
-            x: trackRect.maxX + Self.valueGap,
-            y: centerY - valueSize.height / 2 + Self.valueTextYOffset,
-            width: Self.valueWidth,
-            height: valueSize.height
-        )
-        (value as NSString).draw(in: valueRect, withAttributes: valueAttributes)
+        let rowLayout = layoutRow(label: label, value: value, centerY: centerY)
+
+        (label as NSString).draw(in: rowLayout.labelRect, withAttributes: labelAttributes)
+        drawPill(rowLayout.trackRect, color: NSColor.white.withAlphaComponent(0.18))
+        (value as NSString).draw(in: rowLayout.valueRect, withAttributes: valueAttributes)
     }
 
     private func setupFillLayers() {
@@ -630,7 +610,7 @@ private final class StatusQuotaBarsView: NSView {
     }
 
     private func fillPath(displayPercent: Double, centerY: CGFloat) -> CGPath {
-        let trackRect = self.trackRect(centerY: centerY)
+        let trackRect = self.trackRect(displayPercent: displayPercent, centerY: centerY)
         let fillWidth: CGFloat
         if displayPercent > 0 {
             fillWidth = max(Self.trackHeight, trackRect.width * CGFloat(displayPercent) / 100)
@@ -651,17 +631,46 @@ private final class StatusQuotaBarsView: NSView {
         )
     }
 
-    private func trackRect(centerY: CGFloat) -> NSRect {
-        return NSRect(
-            x: Self.trackX,
+    private func layoutRow(label: String, value: String, centerY: CGFloat) -> RowLayout {
+        let labelSize = Self.textSize(label, font: Self.labelFont)
+        let valueSize = Self.textSize(value, font: Self.valueFont)
+        let contentWidth = labelSize.width + Self.itemGap + Self.trackWidth + Self.itemGap + valueSize.width
+        let leadingInset = max((bounds.width - contentWidth) / 2, 0)
+        let labelRect = NSRect(
+            x: leadingInset,
+            y: centerY - labelSize.height / 2 + Self.labelTextYOffset,
+            width: labelSize.width,
+            height: labelSize.height
+        )
+        let trackRect = NSRect(
+            x: labelRect.maxX + Self.itemGap,
             y: centerY - Self.trackHeight / 2,
             width: Self.trackWidth,
             height: Self.trackHeight
         )
+        let valueRect = NSRect(
+            x: trackRect.maxX + Self.itemGap,
+            y: centerY - valueSize.height / 2 + Self.valueTextYOffset,
+            width: valueSize.width,
+            height: valueSize.height
+        )
+        return RowLayout(labelRect: labelRect, trackRect: trackRect, valueRect: valueRect)
     }
 
-    private static var trackX: CGFloat {
-        labelWidth + trackLabelGap
+    private func trackRect(displayPercent: Double, centerY: CGFloat) -> NSRect {
+        layoutRow(
+            label: Self.label,
+            value: Self.valueText(for: displayPercent),
+            centerY: centerY
+        ).trackRect
+    }
+
+    private static func textSize(_ text: String, font: NSFont) -> NSSize {
+        (text as NSString).size(withAttributes: [.font: font])
+    }
+
+    private static func valueText(for displayPercent: Double) -> String {
+        "\(Int(clamped(displayPercent)))%"
     }
 
     private static func color(forUsedPercent usedPercent: Double) -> NSColor {
