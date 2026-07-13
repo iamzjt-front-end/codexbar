@@ -308,6 +308,9 @@ enum L {
     static func tokenThreadCount(_ n: Int) -> String {
         zh ? "\(n) 个会话" : "\(n) threads"
     }
+    static func tokenDailyUsage(_ compactValue: String) -> String {
+        zh ? "\(compactValue) Token" : "\(compactValue) tokens"
+    }
 
     // MARK: - CodexRadar
     static func codexResetWindowOpen(_ resetTime: String) -> String {
