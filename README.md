@@ -150,7 +150,7 @@ CodexAppBar 尽量在本机完成工作，但它会接触敏感的 Codex 登录�
 ## 发布
 
 仓库内置发布脚本，可生成 release notes、archive、ad-hoc 签名、打包 zip，并通过 GitHub CLI 发布。
-脚本会把 release 日期写入 `CFBundleVersion`（例如 `20260618` / `20260618.1`），供客户端自动更新判断当前安装版本。
+日期 tag 是对外版本号，例如 `v2026.06.18` / `v2026.06.18.1`。脚本会把日期写入 `CFBundleShortVersionString`（`2026.06.18`），并把完整版本写入 `CFBundleVersion`（`20260618` / `20260618.1`）；App 会显示完整的日期版本，并用它判断自动更新。发布包统一命名为 `codexAppBar-vYYYY.MM.DD[.N]-release.zip`。
 
 ```sh
 scripts/release.sh

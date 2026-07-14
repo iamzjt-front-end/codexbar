@@ -150,7 +150,7 @@ CodexAppBar is designed to run locally, but it touches sensitive Codex authentic
 ## Release
 
 The repository includes a release helper that creates release notes, archives the app, applies ad-hoc signing, packages a zip, and publishes with GitHub CLI.
-It writes the release date into `CFBundleVersion` (for example `20260618` / `20260618.1`) so the app can compare the installed build with the latest GitHub Release.
+The date tag is the public version, for example `v2026.06.18` / `v2026.06.18.1`. The script writes the date into `CFBundleShortVersionString` (`2026.06.18`) and the complete version into `CFBundleVersion` (`20260618` / `20260618.1`); the app renders the complete date version and uses it for update comparisons. Release archives consistently use `codexAppBar-vYYYY.MM.DD[.N]-release.zip`.
 
 ```sh
 scripts/release.sh

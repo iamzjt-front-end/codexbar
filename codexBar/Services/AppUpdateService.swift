@@ -77,11 +77,7 @@ final class AppUpdateService: ObservableObject {
 
     var currentVersionDisplay: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let build = currentBundleVersion
-        if version.isEmpty {
-            return build
-        }
-        return "v\(version) (\(build))"
+        return AppVersion.display(marketingVersion: version, bundleVersion: currentBundleVersion)
     }
 
     func startPeriodicChecks() {

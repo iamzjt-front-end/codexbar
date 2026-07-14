@@ -190,7 +190,7 @@ usage() {
 Usage: scripts/release.sh [options]
 
 Options:
-  --tag TAG          指定发布 tag；默认使用当天日期，如 v2026.06.12，冲突时自动递增为 .1/.2
+  --tag TAG          指定日期版本 tag；格式为 vYYYY.MM.DD[.N]，冲突时自动递增为 .1/.2
   --repo OWNER/REPO  GitHub 仓库；默认 iamzjt-front-end/codexbar
   --notes-file FILE  使用自定义中文 release notes 文件
   --yes             跳过交互确认
@@ -352,7 +352,7 @@ release_notes_from_git() {
   local last_tag="$1"
   local range="$2"
   local asset_name="$3"
-  local marketing_version="$4"
+  local public_version="$4"
   local bundle_version="$5"
   local sha256="$6"
   local changelog
@@ -378,7 +378,7 @@ release_notes_from_git() {
     echo
     echo "## 构建信息"
     echo
-    echo "- App 版本：${marketing_version}"
+    echo "- 发布版本：${public_version}"
     echo "- 构建号：${bundle_version}"
     echo "- 发布产物：${asset_name}"
     echo "- SHA-256：${sha256}"
@@ -433,31 +433,35 @@ print_box "Last release tag" "${last_release_tag:-undefined}"
 suggested_tag="$(next_date_tag)"
 choose_release_tag "$suggested_tag"
 
+if [[ ! "$TAG" =~ ^v([0-9]{4})\.([0-9]{2})\.([0-9]{2})(\.([1-9][0-9]*))?$ ]]; then
+  echo "发布 tag 必须使用日期版本格式 vYYYY.MM.DD[.N]，且序号不能有前导 0：$TAG" >&2
+  exit 1
+fi
+
+release_year="${BASH_REMATCH[1]}"
+release_month="${BASH_REMATCH[2]}"
+release_day="${BASH_REMATCH[3]}"
+release_sequence="${BASH_REMATCH[5]:-}"
+release_date="${release_year}-${release_month}-${release_day}"
+validated_release_date="$(date -j -f '%Y-%m-%d' "$release_date" '+%Y-%m-%d' 2>/dev/null || true)"
+if [[ "$validated_release_date" != "$release_date" ]]; then
+  echo "发布 tag 包含无效日期：$TAG" >&2
+  exit 1
+fi
+
 release_range=""
 if [[ -n "$last_release_tag" ]] && git rev-parse -q --verify "${last_release_tag}^{commit}" >/dev/null 2>&1; then
   release_range="${last_release_tag}..HEAD"
 fi
 
-marketing_version="$(
-  xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" -showBuildSettings 2>/dev/null \
-    | awk -F'= ' '/MARKETING_VERSION/{print $2; exit}' \
-    | tr -d '[:space:]'
-)"
-if [[ -z "$marketing_version" ]]; then
-  echo "无法读取 MARKETING_VERSION。" >&2
-  exit 1
-fi
-
-if [[ "$TAG" =~ ^v([0-9]{4})\.([0-9]{2})\.([0-9]{2})(\.([0-9]+))?$ ]]; then
-  date_suffix="${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
-  if [[ -n "${BASH_REMATCH[5]:-}" ]]; then
-    date_suffix="${date_suffix}.${BASH_REMATCH[5]}"
-  fi
-else
-  date_suffix="$(date '+%Y%m%d')"
+date_suffix="${release_year}${release_month}${release_day}"
+if [[ -n "$release_sequence" ]]; then
+  date_suffix="${date_suffix}.${release_sequence}"
 fi
 bundle_version="$date_suffix"
-asset_name="codexAppBar-${marketing_version}-${date_suffix}-release.zip"
+marketing_version="${release_year}.${release_month}.${release_day}"
+public_version="$TAG"
+asset_name="codexAppBar-${public_version}-release.zip"
 asset_path="dist/${asset_name}"
 app_path="${ARCHIVE_PATH}/${APP_RELATIVE_PATH}"
 
@@ -465,6 +469,8 @@ print_box "Release target" "Repo:   $REPO
 Branch: $current_branch
 Tag:    $TAG
 Range:  ${release_range:-<all commits>}
+Version: $public_version
+Marketing: $marketing_version
 Build:  $bundle_version
 Asset:  $asset_path"
 
@@ -478,6 +484,7 @@ run_progress "编译中" "编译完成" xcodebuild \
   -configuration "$CONFIGURATION" \
   -archivePath "$ARCHIVE_PATH" \
   clean archive \
+  MARKETING_VERSION="$marketing_version" \
   CURRENT_PROJECT_VERSION="$bundle_version" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGN_IDENTITY= \
@@ -512,7 +519,7 @@ TEMP_FILES+=("$notes_tmp")
 if [[ -n "$NOTES_FILE" ]]; then
   cp "$NOTES_FILE" "$notes_tmp"
 else
-  release_notes_from_git "$last_release_tag" "$release_range" "$asset_name" "$marketing_version" "$bundle_version" "$sha256" > "$notes_tmp"
+  release_notes_from_git "$last_release_tag" "$release_range" "$asset_name" "$public_version" "$bundle_version" "$sha256" > "$notes_tmp"
 fi
 
 echo
