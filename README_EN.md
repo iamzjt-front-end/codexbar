@@ -131,7 +131,7 @@ CodexAppBar does not require a hosted backend. It combines local Codex files wit
 | Quota usage | `https://chatgpt.com/backend-api/wham/usage` |
 | Account / organization metadata | `https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27` |
 | Model quality | `https://codexradar.com/current.json` |
-| Local token usage | `~/.codex/sqlite/state_5.sqlite` or `~/.codex/state_5.sqlite` |
+| Local token usage | `~/.codex/state_5.sqlite` or the legacy path `~/.codex/sqlite/state_5.sqlite` |
 | Hook configuration | `~/.codex/hooks.json` |
 | Session status hook | `~/.codex/codexbar/codexbar-session-status-hook.py` |
 | Session status output | `~/.codex/codexbar/session_status.json` |

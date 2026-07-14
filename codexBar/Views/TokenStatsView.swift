@@ -13,9 +13,9 @@ struct TokenStatsView: View {
             .id(language.identity)
 
             HStack(spacing: 5) {
-                Text(TokenFormat.compact(service.stat.totalTokens))
+                Text(service.stat.map { TokenFormat.compact($0.totalTokens) } ?? "--")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(service.stat == nil ? .secondary : .accentColor)
                     .contentTransition(.numericText())
                 Text(L.tokenTotal)
                     .font(.system(size: 9))
@@ -26,12 +26,12 @@ struct TokenStatsView: View {
                         .frame(width: 10, height: 10)
                 }
                 Spacer()
-                Text(L.tokenThreadCount(service.stat.threadCount))
+                Text(service.stat.map { L.tokenThreadCount($0.threadCount) } ?? "--")
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity)
-            .animation(.easeOut(duration: 0.25), value: service.stat.totalTokens)
+            .animation(.easeOut(duration: 0.25), value: service.stat?.totalTokens)
 
             ContributionHeatmap(daily: service.daily)
                 .frame(maxWidth: .infinity, alignment: .center)

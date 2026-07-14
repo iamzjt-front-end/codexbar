@@ -131,7 +131,7 @@ CodexAppBar 不依赖自建后端，数据来自本机 Codex 文件和 OpenAI / 
 | 额度用量 | `https://chatgpt.com/backend-api/wham/usage` |
 | 账号 / 组织信息 | `https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27` |
 | 模型质量 | `https://codexradar.com/current.json` |
-| 本地 Token 用量 | `~/.codex/sqlite/state_5.sqlite` 或 `~/.codex/state_5.sqlite` |
+| 本地 Token 用量 | `~/.codex/state_5.sqlite` 或旧版路径 `~/.codex/sqlite/state_5.sqlite` |
 | hooks 配置 | `~/.codex/hooks.json` |
 | 会话状态 hook | `~/.codex/codexbar/codexbar-session-status-hook.py` |
 | 会话状态输出 | `~/.codex/codexbar/session_status.json` |

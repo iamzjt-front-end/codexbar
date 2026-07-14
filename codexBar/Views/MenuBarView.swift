@@ -452,7 +452,6 @@ struct MenuBarView: View {
             lastVisibleRefresh = Date()
             store.markActiveAccount()
             codexHookInstaller.refresh()
-            TokenStatsService.shared.refresh()
             Task { await appUpdater.checkForUpdates(silent: true) }
         }
         .onDisappear {

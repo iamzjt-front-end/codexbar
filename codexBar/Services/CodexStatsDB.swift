@@ -15,6 +15,11 @@ struct CodexStatsDB {
         }
     }
 
+    struct Snapshot: Sendable {
+        let stat: WindowStat
+        let dailyTokens: [String: Int]
+    }
+
     nonisolated private static var homeDirectory: URL {
         if let pw = getpwuid(getuid()), let pwDir = pw.pointee.pw_dir {
             return URL(fileURLWithPath: String(cString: pwDir))
@@ -25,8 +30,8 @@ struct CodexStatsDB {
     nonisolated private static var dbPaths: [String] {
         let codexHome = homeDirectory.appendingPathComponent(".codex")
         return [
-            codexHome.appendingPathComponent("sqlite/state_5.sqlite").path,
-            codexHome.appendingPathComponent("state_5.sqlite").path
+            codexHome.appendingPathComponent("state_5.sqlite").path,
+            codexHome.appendingPathComponent("sqlite/state_5.sqlite").path
         ]
     }
 
@@ -46,7 +51,22 @@ struct CodexStatsDB {
         return openedDB
     }
 
-    nonisolated private static func latestThreadUpdatedAt(in db: OpaquePointer) -> Int64? {
+    /// SQLite WAL 模式下，最新写入可能只体现在 `-wal`，主库文件的 mtime 不会同步变化。
+    /// 忽略 `-shm`：只读连接也会触碰它，不能用来判断哪个库仍在写入。
+    nonisolated private static func contentModificationDate(at path: String) -> Date {
+        let fileManager = FileManager.default
+        return [path, path + "-wal"].compactMap { candidate in
+            guard let attributes = try? fileManager.attributesOfItem(atPath: candidate) else {
+                return nil
+            }
+            return attributes[.modificationDate] as? Date
+        }.max() ?? .distantPast
+    }
+
+    nonisolated private static func latestThreadUpdatedAt(at path: String) -> Int64? {
+        guard let db = openReadOnlyDB(at: path) else { return nil }
+        defer { sqlite3_close(db) }
+
         let sql = "SELECT MAX(updated_at) FROM threads;"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
@@ -59,24 +79,33 @@ struct CodexStatsDB {
         return sqlite3_column_int64(stmt, 0)
     }
 
-    nonisolated private static func readFromCurrentDB<T>(_ read: (OpaquePointer) -> T?) -> T? {
-        let candidatePaths = dbPaths.filter { FileManager.default.fileExists(atPath: $0) }
-        var selectedPath: String?
-        var selectedUpdatedAt: Int64 = .min
+    nonisolated private static var currentDBPath: String? {
+        let fileManager = FileManager.default
+        let candidates = dbPaths
+            .filter { fileManager.fileExists(atPath: $0) }
+            .sorted { contentModificationDate(at: $0) > contentModificationDate(at: $1) }
 
-        for path in candidatePaths {
-            guard let db = openReadOnlyDB(at: path) else { continue }
-            let updatedAt = latestThreadUpdatedAt(in: db)
-            sqlite3_close(db)
+        // 最新写入的库若正好暂时不可读，不能静默退回旧库，否则会伪装成近期数据消失。
+        guard let freshestPath = candidates.first,
+              let freshestUpdatedAt = latestThreadUpdatedAt(at: freshestPath) else {
+            return nil
+        }
 
-            guard let updatedAt else { continue }
-            if selectedPath == nil || updatedAt > selectedUpdatedAt {
+        var selectedPath = freshestPath
+        var selectedUpdatedAt = freshestUpdatedAt
+
+        for path in candidates.dropFirst() {
+            guard let updatedAt = latestThreadUpdatedAt(at: path) else { continue }
+            if updatedAt > selectedUpdatedAt {
                 selectedPath = path
                 selectedUpdatedAt = updatedAt
             }
         }
+        return selectedPath
+    }
 
-        guard let path = selectedPath,
+    nonisolated private static func readFromCurrentDB<T>(_ read: (OpaquePointer) -> T?) -> T? {
+        guard let path = currentDBPath,
               let db = openReadOnlyDB(at: path) else {
             return nil
         }
@@ -85,45 +114,39 @@ struct CodexStatsDB {
         return read(db)
     }
 
-    /// 查询 updated_at ≥ since 的 thread 数与累计 token 之和。
-    nonisolated static func stat(since: Date) -> WindowStat {
+    /// 在同一个只读连接内读取区间统计与热力图，避免一次刷新混用迁移前后的两个库。
+    nonisolated static func snapshot(statSince: Date, dailySince: Date) -> Snapshot? {
         readFromCurrentDB { db in
-            var result = WindowStat()
-            let sql = "SELECT COUNT(*), COALESCE(SUM(tokens_used), 0) FROM threads WHERE updated_at >= ?;"
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-            defer { sqlite3_finalize(stmt) }
+            var stat = WindowStat()
+            let statSQL = "SELECT COUNT(*), COALESCE(SUM(tokens_used), 0) FROM threads WHERE updated_at >= ?;"
+            var statStmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, statSQL, -1, &statStmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(statStmt) }
 
-            sqlite3_bind_int64(stmt, 1, Int64(since.timeIntervalSince1970))
-            if sqlite3_step(stmt) == SQLITE_ROW {
-                result.threadCount = Int(sqlite3_column_int64(stmt, 0))
-                result.totalTokens = Int(sqlite3_column_int64(stmt, 1))
-            }
-            return result
-        } ?? WindowStat()
-    }
+            sqlite3_bind_int64(statStmt, 1, Int64(statSince.timeIntervalSince1970))
+            guard sqlite3_step(statStmt) == SQLITE_ROW else { return nil }
+            stat.threadCount = Int(sqlite3_column_int64(statStmt, 0))
+            stat.totalTokens = Int(sqlite3_column_int64(statStmt, 1))
 
-    /// 每日 token 用量（updated_at ≥ since），key = 当地时区的 "yyyy-MM-dd"。
-    /// 用于 GitHub 风格贡献热力图。
-    nonisolated static func dailyTokens(since: Date) -> [String: Int] {
-        readFromCurrentDB { db in
             var out: [String: Int] = [:]
             // SQLite 直接按本地时区分组成日期串
-            let sql = """
+            let dailySQL = """
             SELECT date(updated_at, 'unixepoch', 'localtime') d, SUM(tokens_used) t
             FROM threads WHERE updated_at >= ? GROUP BY d;
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-            defer { sqlite3_finalize(stmt) }
+            var dailyStmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, dailySQL, -1, &dailyStmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(dailyStmt) }
 
-            sqlite3_bind_int64(stmt, 1, Int64(since.timeIntervalSince1970))
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let d = sqlite3_column_text(stmt, 0).map({ String(cString: $0) }) else { continue }
-                out[d] = Int(sqlite3_column_int64(stmt, 1))
+            sqlite3_bind_int64(dailyStmt, 1, Int64(dailySince.timeIntervalSince1970))
+            while sqlite3_step(dailyStmt) == SQLITE_ROW {
+                guard let day = sqlite3_column_text(dailyStmt, 0).map({ String(cString: $0) }) else {
+                    continue
+                }
+                out[day] = Int(sqlite3_column_int64(dailyStmt, 1))
             }
-            return out
-        } ?? [:]
-    }
 
+            return Snapshot(stat: stat, dailyTokens: out)
+        }
+    }
 }

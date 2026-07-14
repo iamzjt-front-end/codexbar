@@ -39,7 +39,7 @@ final class TokenStatsService: ObservableObject {
     private init() {}
 
     @Published var range: TokenStatsRange = .today
-    @Published var stat = CodexStatsDB.WindowStat()
+    @Published var stat: CodexStatsDB.WindowStat?
     @Published var daily: [String: Int] = [:]   // 热力图：近 16 周每日 token
     @Published var loading = false
 
@@ -48,6 +48,7 @@ final class TokenStatsService: ObservableObject {
     func switchTo(_ r: TokenStatsRange) {
         guard r != range else { return }
         range = r
+        stat = nil
         refresh()
     }
 
@@ -59,14 +60,16 @@ final class TokenStatsService: ObservableObject {
         let heatSince = Calendar(identifier: .gregorian).date(byAdding: .day, value: -119, to: Date()) ?? since
         loading = true
         currentTask = Task(priority: .userInitiated) { [weak self] in
-            let (s, d) = await Task.detached(priority: .userInitiated) {
-                (CodexStatsDB.stat(since: since), CodexStatsDB.dailyTokens(since: heatSince))
+            let snapshot = await Task.detached(priority: .userInitiated) {
+                CodexStatsDB.snapshot(statSince: since, dailySince: heatSince)
             }.value
 
             guard !Task.isCancelled, let self else { return }
             if self.range == r {
-                self.stat = s
-                self.daily = d
+                if let snapshot {
+                    self.stat = snapshot.stat
+                    self.daily = snapshot.dailyTokens
+                }
                 self.loading = false
             }
         }
