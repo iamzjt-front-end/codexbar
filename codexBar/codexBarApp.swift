@@ -12,8 +12,11 @@ struct codexBarApp: App {
         // App 级后台续期，脱离菜单 View 生命周期（菜单关闭时 View 不存在，其内 Timer 不跑）
         BackgroundRefresher.shared.start(interval: RefreshFrequencySettings.shared.selection.backgroundInterval)
         CodexRadarService.shared.start()
-        CodexSessionStatusService.shared.start()
         CodexHookInstallerService.shared.start()
+        TaskCenterService.shared.onRequestOpenTaskCenter = { taskKey in
+            TaskCenterWindowCoordinator.shared.open(taskKey: taskKey)
+        }
+        TaskCenterService.shared.start()
         AppUpdateService.shared.startPeriodicChecks()
         AppStatusBarController.shared.start(
             store: TokenStore.shared,
@@ -21,7 +24,7 @@ struct codexBarApp: App {
             language: LanguageSettings.shared,
             refreshFrequency: RefreshFrequencySettings.shared,
             quotaDisplay: QuotaDisplaySettings.shared,
-            codexSessionStatus: CodexSessionStatusService.shared,
+            taskCenter: TaskCenterService.shared,
             codexHookInstaller: CodexHookInstallerService.shared
         )
     }
@@ -30,6 +33,26 @@ struct codexBarApp: App {
         Settings {
             EmptyView()
         }
+
+        Window(L.taskCenterTitle, id: TaskCenterWindowCoordinator.sceneID) {
+            TaskCenterView()
+                .background(
+                    TaskCenterWindowAccessor { window in
+                        TaskCenterWindowCoordinator.shared.register(window)
+                    }
+                )
+                .handlesExternalEvents(
+                    preferring: [TaskCenterWindowCoordinator.externalEventMatch],
+                    allowing: [TaskCenterWindowCoordinator.externalEventMatch]
+                )
+                .onOpenURL { url in
+                    TaskCenterWindowCoordinator.shared.handle(url)
+                }
+        }
+        .defaultSize(width: 560, height: 480)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        .handlesExternalEvents(matching: [TaskCenterWindowCoordinator.externalEventMatch])
     }
 }
 
@@ -48,7 +71,7 @@ private final class AppStatusBarController: NSObject {
     private weak var language: LanguageSettings?
     private weak var refreshFrequency: RefreshFrequencySettings?
     private weak var quotaDisplay: QuotaDisplaySettings?
-    private weak var codexSessionStatus: CodexSessionStatusService?
+    private weak var taskCenter: TaskCenterService?
     private weak var codexHookInstaller: CodexHookInstallerService?
 
     func start(
@@ -57,7 +80,7 @@ private final class AppStatusBarController: NSObject {
         language: LanguageSettings,
         refreshFrequency: RefreshFrequencySettings,
         quotaDisplay: QuotaDisplaySettings,
-        codexSessionStatus: CodexSessionStatusService,
+        taskCenter: TaskCenterService,
         codexHookInstaller: CodexHookInstallerService
     ) {
         guard statusItem == nil else { return }
@@ -69,7 +92,7 @@ private final class AppStatusBarController: NSObject {
         self.language = language
         self.refreshFrequency = refreshFrequency
         self.quotaDisplay = quotaDisplay
-        self.codexSessionStatus = codexSessionStatus
+        self.taskCenter = taskCenter
         self.codexHookInstaller = codexHookInstaller
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -99,7 +122,7 @@ private final class AppStatusBarController: NSObject {
     }
 
     private func installObservers() {
-        guard let store, let language, let quotaDisplay, let codexSessionStatus, let codexHookInstaller else { return }
+        guard let store, let language, let quotaDisplay, let taskCenter, let codexHookInstaller else { return }
 
         store.$accounts
             .receive(on: RunLoop.main)
@@ -126,7 +149,7 @@ private final class AppStatusBarController: NSObject {
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
 
-        codexSessionStatus.$status
+        taskCenter.$snapshot
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
@@ -150,7 +173,7 @@ private final class AppStatusBarController: NSObject {
               let capsuleView,
               let store,
               let quotaDisplay,
-              let codexSessionStatus,
+              let taskCenter,
               let codexHookInstaller else { return }
         let quotaState = Self.quotaState(from: store, amountMode: quotaDisplay.amountMode)
         let iconName = Self.iconName(from: store)
@@ -159,7 +182,9 @@ private final class AppStatusBarController: NSObject {
             mode: quotaDisplay.mode,
             showStatusLights: quotaDisplay.showStatusLights
         )
-        let light: CodexSessionLight = codexHookInstaller.state.needsAction ? .offline : codexSessionStatus.status.light
+        let light: CodexSessionLight = codexHookInstaller.state.needsAction
+            ? .offline
+            : taskCenter.snapshot.aggregateLight
 
         if abs(lastStatusItemWidth - width) > 0.5 {
             statusItem?.length = width
@@ -174,7 +199,10 @@ private final class AppStatusBarController: NSObject {
             light: light,
             showStatusLights: quotaDisplay.showStatusLights
         )
-        button.toolTip = codexHookInstaller.state.needsAction ? L.codexHookTooltipNeedsInstall : codexSessionStatus.helpText
+        button.toolTip = Self.taskCenterToolTip(
+            snapshot: taskCenter.snapshot,
+            hookState: codexHookInstaller.state
+        )
     }
 
     private func showMenuPopover() {
@@ -233,6 +261,19 @@ private final class AppStatusBarController: NSObject {
             return "bolt.circle.fill"
         }
         return "terminal.fill"
+    }
+
+    private static func taskCenterToolTip(
+        snapshot: TaskCenterSnapshot,
+        hookState: CodexHookInstallState
+    ) -> String {
+        guard !hookState.needsAction else { return L.codexHookTooltipNeedsInstall }
+        let summary = L.taskCenterSummary(
+            needsAttention: snapshot.needsAttentionCount,
+            running: snapshot.runningCount
+        )
+        guard let record = snapshot.mostUrgent else { return summary }
+        return "\(summary) · \(record.projectName) · \(L.taskCenterPhase(record.phase))"
     }
 }
 

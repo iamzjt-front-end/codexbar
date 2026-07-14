@@ -1,19 +1,36 @@
 import Foundation
 
-class WhamService {
+@MainActor
+final class WhamService {
     static let shared = WhamService()
-    private init() {}
 
     private let usageURL = "https://chatgpt.com/backend-api/wham/usage"
     private let resetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+    private let httpClient: HTTPDataClient
+    private let now: () -> Date
+    private var flights: [FlightKey: Task<Void, Never>] = [:]
+
+    private struct FlightKey: Hashable {
+        let accountKey: AccountKey
+        let revision: CredentialRevision
+    }
+
+    convenience init() {
+        self.init(httpClient: URLSessionHTTPDataClient())
+    }
+
+    init(httpClient: HTTPDataClient, now: @escaping () -> Date = Date.init) {
+        self.httpClient = httpClient
+        self.now = now
+    }
 
     /// 查询单个账号的 wham usage
-    func fetchUsage(account: TokenAccount) async throws -> WhamUsageResult {
+    func fetchUsage(snapshot: CredentialSnapshot) async throws -> WhamUsageResult {
         var request = URLRequest(url: URL(string: usageURL)!)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
-        request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(account.chatgptAccountId, forHTTPHeaderField: "chatgpt-account-id")
+        request.setValue("Bearer \(snapshot.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(snapshot.chatgptAccountId, forHTTPHeaderField: "chatgpt-account-id")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("zh-CN", forHTTPHeaderField: "oai-language")
         request.setValue(
@@ -22,12 +39,12 @@ class WhamService {
         )
         request.setValue("https://chatgpt.com/codex/settings/usage", forHTTPHeaderField: "Referer")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await httpClient.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw WhamError.invalidResponse }
         switch http.statusCode {
         case 200: break
         case 401: throw WhamError.unauthorized
-        case 402: throw WhamError.forbidden  // deactivated_workspace
+        case 402: throw WhamError.deactivatedWorkspace
         case 403: throw WhamError.forbidden
         default: throw WhamError.httpError(http.statusCode)
         }
@@ -38,14 +55,14 @@ class WhamService {
     }
 
     /// 查询官方 banked reset 次数和到期时间
-    func fetchResetCredits(account: TokenAccount) async throws -> WhamResetCreditsResult {
+    func fetchResetCredits(snapshot: CredentialSnapshot) async throws -> WhamResetCreditsResult {
         var request = URLRequest(url: URL(string: resetCreditsURL)!)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
-        request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(snapshot.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("codex-1", forHTTPHeaderField: "OpenAI-Beta")
         request.setValue("Codex Desktop", forHTTPHeaderField: "originator")
-        request.setValue(account.chatgptAccountId, forHTTPHeaderField: "ChatGPT-Account-ID")
+        request.setValue(snapshot.chatgptAccountId, forHTTPHeaderField: "ChatGPT-Account-ID")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("zh-CN", forHTTPHeaderField: "oai-language")
         request.setValue(
@@ -54,12 +71,12 @@ class WhamService {
         )
         request.setValue("https://chatgpt.com/codex/settings/usage", forHTTPHeaderField: "Referer")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await httpClient.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw WhamError.invalidResponse }
         switch http.statusCode {
         case 200: break
         case 401: throw WhamError.unauthorized
-        case 402: throw WhamError.forbidden
+        case 402: throw WhamError.deactivatedWorkspace
         case 403: throw WhamError.forbidden
         default: throw WhamError.httpError(http.statusCode)
         }
@@ -79,56 +96,76 @@ class WhamService {
     }
 
     /// 查询账号所属组织名称
-    func fetchOrgName(account: TokenAccount) async -> String? {
+    func fetchOrgName(snapshot: CredentialSnapshot) async -> String? {
         let urlStr = "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=-480"
         guard let url = URL(string: urlStr) else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
-        request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(account.chatgptAccountId, forHTTPHeaderField: "chatgpt-account-id")
+        request.setValue("Bearer \(snapshot.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(snapshot.chatgptAccountId, forHTTPHeaderField: "chatgpt-account-id")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("zh-CN", forHTTPHeaderField: "oai-language")
         request.setValue(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             forHTTPHeaderField: "User-Agent"
         )
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
+        guard let (data, _) = try? await httpClient.data(for: request),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let accounts = json["accounts"] as? [String: Any],
-              let entry = accounts[account.chatgptAccountId] as? [String: Any],
+              let entry = accounts[snapshot.chatgptAccountId] as? [String: Any],
               let acct = entry["account"] as? [String: Any],
               let name = acct["name"] as? String else { return nil }
         return name
     }
 
     /// 刷新单个账号的用量、组织名和重置机会
-    func refreshOne(account: TokenAccount, store: TokenStore) async {
+    func refreshOne(key: AccountKey, store: TokenStore) async {
+        guard let snapshot = store.snapshot(for: key) else { return }
+        let flightKey = FlightKey(accountKey: key, revision: snapshot.revision)
+        if let existing = flights[flightKey] {
+            await existing.value
+            return
+        }
+
+        let staleKeys = flights.keys.filter {
+            $0.accountKey == key && $0.revision != snapshot.revision
+        }
+        for staleKey in staleKeys {
+            flights.removeValue(forKey: staleKey)?.cancel()
+        }
+
+        let task = Task { [self] in
+            await performRefresh(snapshot: snapshot, store: store)
+        }
+        flights[flightKey] = task
+        await task.value
+        flights[flightKey] = nil
+    }
+
+    private func performRefresh(snapshot: CredentialSnapshot, store: TokenStore) async {
         do {
-            async let usageResult = self.fetchUsage(account: account)
-            async let orgName = self.fetchOrgName(account: account)
-            async let resetCredits = self.fetchResetCreditsIfAvailable(account: account)
+            async let usageResult = self.fetchUsage(snapshot: snapshot)
+            async let orgName = self.fetchOrgName(snapshot: snapshot)
+            async let resetCredits = self.fetchResetCreditsIfAvailable(snapshot: snapshot)
             let (result, name, credits) = try await (usageResult, orgName, resetCredits)
-            await MainActor.run {
-                let updated = Self.updatedAccount(
-                    account,
-                    with: result.merging(resetCredits: credits),
-                    orgName: name
-                )
-                store.addOrUpdate(updated)
-            }
+            let merged = result.merging(resetCredits: credits)
+            let patch = AccountUsagePatch(
+                planType: merged.planType,
+                weeklyUsedPercent: merged.weeklyUsedPercent,
+                weeklyResetAt: merged.weeklyResetAt,
+                resetCreditsAvailableCount: merged.rateLimitResetCreditsAvailableCount,
+                resetCreditsExpiresAt: merged.rateLimitResetCreditsExpiresAt,
+                organizationName: name,
+                checkedAt: now()
+            )
+            _ = store.applyUsagePatch(patch, to: snapshot.key, ifCurrent: snapshot.revision)
+        } catch WhamError.deactivatedWorkspace {
+            // 402 is a workspace-level state. Preserve the last known account/quota state.
         } catch WhamError.forbidden {
-            await MainActor.run {
-                var updated = account
-                updated.isSuspended = true
-                store.addOrUpdate(updated)
-            }
+            _ = store.markSuspended(snapshot.key, ifCurrent: snapshot.revision)
         } catch WhamError.unauthorized {
-            await MainActor.run {
-                var updated = account
-                updated.tokenExpired = true
-                store.addOrUpdate(updated)
-            }
+            _ = store.markTokenExpired(snapshot.key, ifCurrent: snapshot.revision)
         } catch {
             // 静默失败，保留上次数据
         }
@@ -137,36 +174,9 @@ class WhamService {
     /// 批量刷新 store 中所有账号的用量、组织名和重置机会
     func refreshAll(store: TokenStore) async {
         await withTaskGroup(of: Void.self) { group in
-            for account in store.accounts {
+            for key in store.accountKeys() {
                 group.addTask {
-                    do {
-                        async let usageResult = self.fetchUsage(account: account)
-                        async let orgName = self.fetchOrgName(account: account)
-                        async let resetCredits = self.fetchResetCreditsIfAvailable(account: account)
-                        let (result, name, credits) = try await (usageResult, orgName, resetCredits)
-                        await MainActor.run {
-                            let updated = Self.updatedAccount(
-                                account,
-                                with: result.merging(resetCredits: credits),
-                                orgName: name
-                            )
-                            store.addOrUpdate(updated)
-                        }
-                    } catch WhamError.forbidden {
-                        await MainActor.run {
-                            var updated = account
-                            updated.isSuspended = true
-                            store.addOrUpdate(updated)
-                        }
-                    } catch WhamError.unauthorized {
-                        await MainActor.run {
-                            var updated = account
-                            updated.tokenExpired = true
-                            store.addOrUpdate(updated)
-                        }
-                    } catch {
-                        // 静默失败，保留上次数据
-                    }
+                    await self.refreshOne(key: key, store: store)
                 }
             }
         }
@@ -174,8 +184,8 @@ class WhamService {
 
     // MARK: - Private
 
-    private func fetchResetCreditsIfAvailable(account: TokenAccount) async -> WhamResetCreditsResult? {
-        try? await fetchResetCredits(account: account)
+    private func fetchResetCreditsIfAvailable(snapshot: CredentialSnapshot) async -> WhamResetCreditsResult? {
+        try? await fetchResetCredits(snapshot: snapshot)
     }
 
     func parseUsage(_ json: [String: Any]) throws -> WhamUsageResult {
@@ -265,32 +275,6 @@ class WhamService {
         }
 
         return Self.resetCreditsResult(from: json)
-    }
-
-    @MainActor
-    private static func updatedAccount(_ account: TokenAccount, with result: WhamUsageResult, orgName: String?) -> TokenAccount {
-        let nextWeeklyResetAt = result.weeklyResetAt ?? futureDate(account.weeklyResetAt)
-
-        var updated = account
-        updated.tokenExpired = false
-        updated.isSuspended = false
-        updated.planType = result.planType
-        updated.weeklyUsedPercent = result.weeklyUsedPercent
-        updated.weeklyResetAt = nextWeeklyResetAt
-        updated.rateLimitResetCreditsAvailableCount = result.rateLimitResetCreditsAvailableCount
-        if let count = result.rateLimitResetCreditsAvailableCount, count > 0 {
-            updated.rateLimitResetCreditsExpiresAt = result.rateLimitResetCreditsExpiresAt ?? futureDate(account.rateLimitResetCreditsExpiresAt)
-        } else {
-            updated.rateLimitResetCreditsExpiresAt = nil
-        }
-        updated.lastChecked = Date()
-        if let orgName { updated.organizationName = orgName }
-        return updated
-    }
-
-    private static func futureDate(_ date: Date?) -> Date? {
-        guard let date, date.timeIntervalSinceNow > 0 else { return nil }
-        return date
     }
 
     private static func intValue(_ value: Any?) -> Int? {
@@ -471,13 +455,14 @@ struct WhamResetCreditsResult {
 }
 
 enum WhamError: LocalizedError, Equatable {
-    case invalidResponse, unauthorized, forbidden, parseError
+    case invalidResponse, unauthorized, deactivatedWorkspace, forbidden, parseError
     case httpError(Int)
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "无效响应"
         case .unauthorized: return "Token 已过期"
+        case .deactivatedWorkspace: return "工作区已停用"
         case .forbidden: return "账号被封禁"
         case .parseError: return "解析失败"
         case .httpError(let code): return "HTTP \(code)"

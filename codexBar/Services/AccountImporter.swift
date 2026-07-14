@@ -38,6 +38,7 @@ struct AccountImporter {
         }
 
         var out: [TokenAccount] = []
+        var seenAccountIds: Set<String> = []
         for entry in rawAccounts {
             // credentials 可能嵌套，也可能字段直接平铺在 entry 上
             let cred = (entry["credentials"] as? [String: Any]) ?? entry
@@ -80,6 +81,7 @@ struct AccountImporter {
 
             // 仍无 account_id 则跳过（无法去重/激活）
             guard !account.accountId.isEmpty else { continue }
+            guard seenAccountIds.insert(account.accountId).inserted else { continue }
             out.append(account)
         }
 

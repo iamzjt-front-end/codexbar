@@ -204,6 +204,12 @@ struct MenuBarView: View {
 
             Divider()
 
+            TaskCenterSummaryView {
+                TaskCenterWindowCoordinator.shared.open()
+            }
+
+            Divider()
+
             if codexHookInstaller.state.needsAction {
                 CodexHookSetupRow(
                     state: codexHookInstaller.state,
@@ -313,8 +319,12 @@ struct MenuBarView: View {
                             switch result {
                             case .success(let tokens):
                                 let account = AccountBuilder.build(from: tokens)
-                                store.addOrUpdate(account)
-                                Task { await WhamService.shared.refreshOne(account: account, store: store) }
+                                do {
+                                    let key = try store.commitOAuthAccount(account)
+                                    Task { await WhamService.shared.refreshOne(key: key, store: store) }
+                                } catch {
+                                    showError = error.localizedDescription
+                                }
                             case .failure(let error):
                                 showError = error.localizedDescription
                             }
@@ -469,33 +479,41 @@ struct MenuBarView: View {
     }
 
     private func activateAccount(_ account: TokenAccount) {
+        guard let key = store.key(for: account) else {
+            showError = TokenStoreError.invalidAccount.localizedDescription
+            return
+        }
+        let current = store.account(for: key) ?? account
         // team/SSO 账号导入时常无 id_token。直接激活会写空 id_token 到 auth.json，
         // Codex 报 "invalid ID token format"。先用 refresh_token 补一个 id_token 再激活。
-        if account.idToken.isEmpty && !account.refreshToken.isEmpty {
+        if current.idToken.isEmpty,
+           RefreshService.shared.canRefreshWithoutUserInteraction(current) {
             Task {
-                _ = await RefreshService.shared.refreshAndPersist(account, store: store)
-                await MainActor.run {
-                    if let updated = store.accounts.first(where: { $0.accountId == account.accountId }),
-                       !updated.idToken.isEmpty {
-                        performActivate(updated)
-                    } else {
-                        showError = L.cannotActivateNoIdToken
-                    }
+                let result = await RefreshService.shared.refreshAndPersist(key: key, store: store)
+                if result == .refreshed || result == .superseded,
+                   let updated = store.account(for: key), !updated.idToken.isEmpty {
+                    performActivate(key)
+                } else {
+                    showError = L.cannotActivateNoIdToken
                 }
             }
             return
         }
-        performActivate(account)
+        guard !current.idToken.isEmpty else {
+            showError = L.cannotActivateNoIdToken
+            return
+        }
+        performActivate(key)
     }
 
-    private func performActivate(_ account: TokenAccount) {
+    private func performActivate(_ key: AccountKey) {
         let running = NSWorkspace.shared.runningApplications.filter {
             $0.bundleIdentifier == "com.openai.codex"
         }
 
         // Codex 没跑：直接切，不打扰
         guard !running.isEmpty else {
-            do { try store.activate(account) }
+            do { try store.activate(key) }
             catch { showError = error.localizedDescription }
             return
         }
@@ -513,7 +531,7 @@ struct MenuBarView: View {
         guard resp != .alertThirdButtonReturn else { return }
 
         do {
-            try store.activate(account)
+            try store.activate(key)
         } catch {
             showError = error.localizedDescription
             return
@@ -602,12 +620,11 @@ struct MenuBarView: View {
               let data = try? Data(contentsOf: url) else { return }
         do {
             let accounts = try AccountImporter.parse(data)
-            for acc in accounts { store.addOrUpdate(acc) }
+            let importedKeys = try accounts.map { try store.upsertImportedAccount($0) }
             showSuccess = L.importedCount(accounts.count)
-            let imported = accounts
             Task {
-                for acc in imported {
-                    await WhamService.shared.refreshOne(account: acc, store: store)
+                for key in importedKeys {
+                    await WhamService.shared.refreshOne(key: key, store: store)
                 }
             }
         } catch {
@@ -620,51 +637,52 @@ struct MenuBarView: View {
         refreshingAccounts.insert(accountID)
         defer { refreshingAccounts.remove(accountID) }
 
+        guard let key = store.key(for: account) else { return }
         RefreshService.shared.syncActiveFromAuthJson(store: store)
-        var target = latestAccount(matching: account)
-        if RefreshService.shared.needsRefresh(target) {
-            _ = await RefreshService.shared.refreshAndPersist(target, store: store)
-            target = latestAccount(matching: target)
+        if let current = store.account(for: key), RefreshService.shared.needsRefresh(current) {
+            _ = await RefreshService.shared.refreshAndPersist(key: key, store: store)
         }
-        await WhamService.shared.refreshOne(account: target, store: store)
-    }
-
-    private func latestAccount(matching account: TokenAccount) -> TokenAccount {
-        store.accounts.first { $0.accountId == account.accountId } ?? account
+        await WhamService.shared.refreshOne(key: key, store: store)
     }
 
     private func reauthAccount(_ account: TokenAccount) {
-        // 先尝试用 refresh_token 静默续期，成功就免去浏览器重新授权
-        if !account.refreshToken.isEmpty {
+        guard let key = store.key(for: account) else {
+            showError = TokenStoreError.invalidAccount.localizedDescription
+            return
+        }
+        let current = store.account(for: key) ?? account
+        // Codex owns the active account's rolling refresh token. Never rotate it here or the
+        // two processes can consume the same generation and revoke the newly authorized session.
+        // Only inactive accounts are eligible for silent recovery.
+        if RefreshService.shared.canRefreshWithoutUserInteraction(current) {
             Task {
-                let ok = await RefreshService.shared.refreshAndPersist(account, store: store)
-                if ok {
-                    if let updated = store.accounts.first(where: { $0.accountId == account.accountId }) {
-                        await WhamService.shared.refreshOne(account: updated, store: store)
-                    }
-                } else {
-                    // 续期失败（refresh_token 失效）→ 回退到完整 OAuth 重新授权
-                    startReauthOAuth(account)
+                switch await RefreshService.shared.refreshAndPersist(key: key, store: store) {
+                case .refreshed, .superseded:
+                    await WhamService.shared.refreshOne(key: key, store: store)
+                case .needsReauthorization:
+                    startReauthOAuth(replacing: key)
+                case .transientFailure:
+                    showError = L.tokenRefreshFailed
+                case .missing:
+                    break
                 }
             }
             return
         }
-        startReauthOAuth(account)
+        startReauthOAuth(replacing: key)
     }
 
-    private func startReauthOAuth(_ account: TokenAccount) {
+    private func startReauthOAuth(replacing key: AccountKey) {
         oauth.startOAuth { result in
             switch result {
             case .success(let tokens):
-                var updated = AccountBuilder.build(from: tokens)
-                // 若 account_id 匹配，覆盖原账号；否则按新账号添加
-                if updated.accountId == account.accountId {
-                    updated.isActive = account.isActive
-                    updated.tokenExpired = false
-                    updated.isSuspended = false
+                let authorized = AccountBuilder.build(from: tokens)
+                do {
+                    let committedKey = try store.commitOAuthAccount(authorized, replacing: key)
+                    Task { await WhamService.shared.refreshOne(key: committedKey, store: store) }
+                } catch {
+                    showError = error.localizedDescription
                 }
-                store.addOrUpdate(updated)
-                Task { await WhamService.shared.refreshOne(account: updated, store: store) }
             case .failure(let error):
                 showError = error.localizedDescription
             }

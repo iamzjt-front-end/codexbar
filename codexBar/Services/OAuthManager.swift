@@ -19,6 +19,10 @@ class OAuthManager: NSObject, ObservableObject {
     private var completionHandler: ((Result<OAuthTokens, Error>) -> Void)?
 
     func startOAuth(completion: @escaping (Result<OAuthTokens, Error>) -> Void) {
+        guard completionHandler == nil else {
+            completion(.failure(OAuthError.alreadyInProgress))
+            return
+        }
         completionHandler = completion
 
         codeVerifier = generateCodeVerifier()
@@ -174,13 +178,14 @@ struct OAuthTokens {
 }
 
 enum OAuthError: LocalizedError {
-    case invalidURL, stateMismatch, noToken
+    case invalidURL, stateMismatch, noToken, alreadyInProgress
     case serverError(String)
     var errorDescription: String? {
         switch self {
         case .invalidURL: return "无效的授权 URL"
         case .stateMismatch: return "State 验证失败"
         case .noToken: return "未获取到 Token"
+        case .alreadyInProgress: return "已有授权流程正在进行"
         case .serverError(let msg): return "授权失败: \(msg)"
         }
     }

@@ -110,6 +110,141 @@ enum L {
         zh ? "hooks.json 不是有效的对象格式" : "hooks.json is not a valid object"
     }
 
+    // MARK: - Task Center
+    static var taskCenterTitle: String { zh ? "任务中心" : "Task Center" }
+    static var taskCenterNeedsAttentionShort: String { zh ? "待处理" : "Attention" }
+    static var taskCenterRunningShort: String { zh ? "运行中" : "Running" }
+    static var taskCenterWaitingShort: String { zh ? "等待" : "Waiting" }
+    static var taskCenterNeedsAttentionSection: String { zh ? "需要处理" : "Needs Attention" }
+    static var taskCenterRunningSection: String { zh ? "运行中" : "Running" }
+    static var taskCenterWaitingInputSection: String { zh ? "等待输入" : "Waiting for Input" }
+    static var taskCenterEmptySection: String { zh ? "暂无" : "None" }
+    static var taskCenterNoRunningTasks: String { zh ? "暂无运行中的任务" : "No tasks are running" }
+    static var taskCenterNoTaskStatusReceived: String { zh ? "尚未收到任务状态" : "No task status received yet" }
+    static var taskCenterOpenDetail: String {
+        zh ? "打开任务中心查看详情" : "Open Task Center for details"
+    }
+    static var taskCenterOpenHint: String { zh ? "打开完整任务列表" : "Opens the complete task list" }
+    static var taskCenterOpenCodex: String { zh ? "打开 Codex" : "Open Codex" }
+    static var taskCenterOpenCodexHint: String {
+        zh ? "激活 Codex App，不会跳转到指定任务" : "Activates the Codex app without navigating to a specific task"
+    }
+    static var taskCenterSelected: String { zh ? "已选中" : "Selected" }
+    static var taskCenterStaleBadge: String { zh ? "可能已过期" : "Possibly stale" }
+    static var taskCenterHookSummaryDetail: String {
+        zh ? "安装或更新 Hook 后才能显示多任务状态" : "Install or update hooks to show multi-task status"
+    }
+    static var taskCenterHookChecking: String { zh ? "正在检查 Hook" : "Checking hooks" }
+    static var taskCenterHookSetupDetail: String {
+        zh
+            ? "安装后，请在 Codex 提示时信任此 Hook；若状态仍不更新，请运行 /hooks 检查。"
+            : "After installation, trust this hook when Codex asks. If status does not update, run /hooks to inspect it."
+    }
+    static var taskCenterHookBlockingDetail: String {
+        zh
+            ? "尚未收到可信的任务状态。请完成 Hook 安装或更新，并在 Codex 中运行 /hooks 检查是否已信任。"
+            : "No trusted task status has been received. Install or update the hooks, then run /hooks in Codex to confirm trust."
+    }
+    static var taskCenterNoEventsDetail: String {
+        zh
+            ? "如果 Codex 正在运行但这里没有状态，请在 Codex 中运行 /hooks，并确认已信任 CodexAppBar Hook。"
+            : "If Codex is running but no status appears here, run /hooks in Codex and confirm that the CodexAppBar hook is trusted."
+    }
+    static var taskCenterLegacyFallbackDetail: String {
+        zh
+            ? "当前显示旧版单任务兼容状态；新版 Hook 收到事件后会自动切换为多任务视图。"
+            : "Showing the legacy single-task status. The view will switch automatically after the new hook receives an event."
+    }
+    static var taskCenterNotificationTitle: String {
+        zh ? "启用待处理通知" : "Enable attention notifications"
+    }
+    static var taskCenterNotificationDetail: String {
+        zh
+            ? "任务需要权限时发送一条通用通知；通知不会包含项目名或任务内容。"
+            : "Receive a generic notification when a task needs permission. Notifications never include project names or task content."
+    }
+    static var taskCenterEnableNotifications: String { zh ? "启用通知" : "Enable" }
+    static var taskCenterEnablingNotifications: String { zh ? "正在启用通知" : "Enabling notifications" }
+    static var taskCenterNotificationPermissionDenied: String {
+        zh
+            ? "通知未启用。若已拒绝系统权限，请前往系统设置允许 CodexAppBar 通知。"
+            : "Notifications were not enabled. If permission was denied, allow CodexAppBar notifications in System Settings."
+    }
+    static var taskAttentionNotificationTitle: String { zh ? "Codex 需要处理" : "Codex needs attention" }
+    static var taskAttentionNotificationBody: String {
+        zh ? "有一项 Codex 任务正在等待你的操作。" : "A Codex task is waiting for your action."
+    }
+
+    static func taskCenterSummary(needsAttention: Int, running: Int) -> String {
+        guard needsAttention > 0 || running > 0 else { return taskCenterNoRunningTasks }
+        if zh {
+            return "\(needsAttention) 个待处理 · \(running) 个运行中"
+        }
+        let attention = needsAttention == 1 ? "1 needs attention" : "\(needsAttention) need attention"
+        return "\(attention) · \(running) running"
+    }
+
+    static func taskCenterPhase(_ phase: TaskActivityPhase) -> String {
+        switch phase {
+        case .connecting: return zh ? "连接中" : "Connecting"
+        case .processing: return zh ? "处理中" : "Processing"
+        case .compacting: return zh ? "压缩上下文" : "Compacting context"
+        case .awaitingPermission: return zh ? "等待权限" : "Awaiting permission"
+        case .waitingInput: return zh ? "等待输入" : "Waiting for input"
+        }
+    }
+
+    static func taskCenterState(_ state: TaskActivityState) -> String {
+        switch state {
+        case .needsAttention: return zh ? "需要处理" : "Needs attention"
+        case .running: return zh ? "运行中" : "Running"
+        case .ready: return zh ? "等待输入" : "Waiting for input"
+        }
+    }
+
+    static func taskCenterRelativeTime(_ date: Date, relativeTo now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        if seconds < 60 { return zh ? "刚刚更新" : "Updated just now" }
+        if seconds < 3_600 {
+            let minutes = seconds / 60
+            return zh ? "\(minutes) 分钟前" : "\(minutes) min ago"
+        }
+        let hours = seconds / 3_600
+        return zh ? "\(hours) 小时前" : "\(hours) hr ago"
+    }
+
+    static func taskCenterStaleCount(_ count: Int) -> String {
+        zh ? "\(count) 条可能已过期" : "\(count) possibly stale"
+    }
+
+    static func taskCenterUnreadableRecords(_ count: Int) -> String {
+        zh
+            ? "已忽略 \(count) 条无法读取的任务状态。"
+            : "Skipped \(count) unreadable task status \(count == 1 ? "record" : "records")."
+    }
+
+    static func taskCenterHookTitle(for state: CodexHookInstallState) -> String {
+        switch state {
+        case .checking: return taskCenterHookChecking
+        case .missing: return zh ? "安装 Codex Hook" : "Install Codex hooks"
+        case .needsUpdate: return zh ? "更新 Codex Hook" : "Update Codex hooks"
+        case .installed: return zh ? "Codex Hook 已就绪" : "Codex hooks are ready"
+        case .error: return zh ? "Codex Hook 配置异常" : "Codex hook configuration issue"
+        }
+    }
+
+    static func taskCenterHookButton(for state: CodexHookInstallState) -> String {
+        switch state {
+        case .needsUpdate: return zh ? "更新" : "Update"
+        case .error: return zh ? "重试" : "Retry"
+        case .checking, .missing, .installed: return zh ? "安装" : "Install"
+        }
+    }
+
+    static func taskCenterHookActionFailed(_ reason: String) -> String {
+        zh ? "Hook 操作失败：\(reason)" : "Hook action failed: \(reason)"
+    }
+
     // MARK: - MenuBarView
     static var noAccounts: String      { zh ? "还没有账号"          : "No Accounts" }
     static var addAccountHint: String  { zh ? "点击下方授权账号"      : "Authorize an account below" }
@@ -292,6 +427,7 @@ enum L {
     }
     static var delete: String         { zh ? "删除"     : "Delete" }
     static var tokenExpiredHint: String { zh ? "Token 已过期，请重新授权" : "Token expired, please re-authorize" }
+    static var tokenRefreshFailed: String { zh ? "Token 续期失败，请检查网络后重试" : "Token refresh failed. Check your connection and try again." }
     static var accountSuspended: String { zh ? "账号已停用" : "Account suspended" }
 
     // MARK: - Reset countdown

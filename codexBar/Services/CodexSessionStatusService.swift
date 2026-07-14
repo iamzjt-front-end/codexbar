@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import Foundation
 
-enum CodexSessionLight: String, Codable {
+enum CodexSessionLight: String, Codable, Sendable {
     case offline
     case ready
     case running

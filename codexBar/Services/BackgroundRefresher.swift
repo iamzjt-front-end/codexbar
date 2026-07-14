@@ -9,6 +9,9 @@ final class BackgroundRefresher {
     private init() {}
 
     private var timer: Timer?
+    private var tickTask: Task<Void, Never>?
+    private var activeTickID: UInt64?
+    private var nextTickID: UInt64 = 1
     private let store = TokenStore.shared
 
     /// 启动：可立即跑一次，之后每 interval 秒跑一次
@@ -16,11 +19,12 @@ final class BackgroundRefresher {
         stop()
         if runImmediately {
             // 启动时立即检查一次（覆盖"开机就有账号临近过期"）
-            Task { await tick() }
+            scheduleTick()
         }
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            Task { await self.tick() }
+            Task { @MainActor [weak self] in
+                self?.scheduleTick()
+            }
         }
         // common 模式，避免菜单弹出/交互时定时器被挂起
         RunLoop.main.add(t, forMode: .common)
@@ -30,6 +34,26 @@ final class BackgroundRefresher {
     func stop() {
         timer?.invalidate()
         timer = nil
+        tickTask?.cancel()
+        tickTask = nil
+        activeTickID = nil
+    }
+
+    private func scheduleTick() {
+        guard tickTask == nil else { return }
+        let tickID = nextTickID
+        nextTickID &+= 1
+        activeTickID = tickID
+        tickTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if activeTickID == tickID {
+                    tickTask = nil
+                    activeTickID = nil
+                }
+            }
+            await tick()
+        }
     }
 
     /// 一轮：先续期临近过期的账号，再刷新用量
