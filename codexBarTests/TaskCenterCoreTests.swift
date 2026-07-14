@@ -86,9 +86,38 @@ final class TaskCenterCoreTests: XCTestCase {
         XCTAssertTrue(result.isLegacyFallback)
         XCTAssertEqual(result.records.count, 1)
         XCTAssertEqual(result.records.first?.taskKey, TaskActivityRepository.legacyTaskKey)
-        XCTAssertTrue(TaskCenterWindowCoordinator.isValidTaskKey(TaskActivityRepository.legacyTaskKey))
         XCTAssertEqual(result.records.first?.phase, .compacting)
         XCTAssertEqual(result.records.first?.projectName, "Codex")
+    }
+
+    func testAttentionPresentationOnlyExistsWhenUserActionIsRequired() throws {
+        let running = TaskCenterSnapshot(
+            records: [record(key: "running", state: .running, phase: .processing, age: 0)],
+            now: fixedNow
+        )
+        let ready = TaskCenterSnapshot(
+            records: [record(key: "ready", state: .ready, phase: .waitingInput, age: 0)],
+            now: fixedNow
+        )
+        let attention = TaskCenterSnapshot(
+            records: [
+                record(
+                    key: "permission",
+                    state: .needsAttention,
+                    phase: .awaitingPermission,
+                    age: 0,
+                    project: "fund-pulse"
+                )
+            ],
+            now: fixedNow
+        )
+
+        XCTAssertNil(TaskAttentionPresentation(snapshot: running))
+        XCTAssertNil(TaskAttentionPresentation(snapshot: ready))
+
+        let presentation = try XCTUnwrap(TaskAttentionPresentation(snapshot: attention))
+        XCTAssertEqual(presentation.count, 1)
+        XCTAssertEqual(presentation.projectName, "fund-pulse")
     }
 
     func testDirectoryEventIsDebouncedIntoOneReload() async throws {
@@ -186,7 +215,7 @@ final class TaskCenterCoreTests: XCTestCase {
         XCTAssertEqual(client.requests.count, 1)
         XCTAssertFalse(request.content.title.contains("Secret"))
         XCTAssertFalse(request.content.body.contains("Secret"))
-        XCTAssertEqual(request.content.userInfo[SystemTaskNotificationClient.taskKeyUserInfoKey] as? String, "secret-task")
+        XCTAssertTrue(request.content.userInfo.isEmpty)
     }
 
     func testNotificationDedupeSurvivesServiceRecreation() async throws {
@@ -292,21 +321,21 @@ final class TaskCenterCoreTests: XCTestCase {
         XCTAssertEqual(utc, shanghai)
     }
 
-    func testNotificationClickRequestsTaskCenterSelection() async throws {
+    func testNotificationClickRequestsCodexActivation() async throws {
         let defaultsFixture = try DefaultsFixture()
         defer { defaultsFixture.remove() }
         let client = MockTaskNotificationClient(status: .authorized, requestGranted: true)
         let service = TaskNotificationService(notificationClient: client, defaults: defaultsFixture.defaults)
-        var openedTaskKey: String?
-        service.onOpenTaskCenter = { openedTaskKey = $0 }
+        var didRequestCodexActivation = false
+        service.onOpenCodex = { didRequestCodexActivation = true }
 
-        client.open(taskKey: "selected-task")
+        client.open()
         await Task.yield()
 
-        XCTAssertEqual(openedTaskKey, "selected-task")
+        XCTAssertTrue(didRequestCodexActivation)
     }
 
-    func testTaskCenterServiceRoutesNotificationClickToWindowRequest() async throws {
+    func testTaskCenterServiceRoutesNotificationClickToCodexActivation() async throws {
         let fixture = try Fixture(now: fixedNow)
         defer { fixture.remove() }
         let defaultsFixture = try DefaultsFixture()
@@ -318,16 +347,13 @@ final class TaskCenterCoreTests: XCTestCase {
             notificationService: notifications,
             now: { self.fixedNow }
         )
-        var requestedTaskKey: String?
-        service.onRequestOpenTaskCenter = { requestedTaskKey = $0 }
+        var didRequestCodexActivation = false
+        service.onRequestOpenCodex = { didRequestCodexActivation = true }
 
-        client.open(taskKey: "selected-task")
+        client.open()
         await Task.yield()
 
-        XCTAssertEqual(service.selectedTaskKey, "selected-task")
-        XCTAssertEqual(requestedTaskKey, "selected-task")
-        XCTAssertEqual(service.consumeSelectedTaskKey(), "selected-task")
-        XCTAssertNil(service.selectedTaskKey)
+        XCTAssertTrue(didRequestCodexActivation)
     }
 
     private func record(
@@ -473,7 +499,7 @@ private final class MockTaskNotificationClient: TaskNotificationClient {
     var authorizationRequestCount = 0
     var requests: [UNNotificationRequest] = []
     var addError: Error?
-    private var responseHandler: ((String?) -> Void)?
+    private var responseHandler: (() -> Void)?
 
     init(status: UNAuthorizationStatus, requestGranted: Bool, addError: Error? = nil) {
         self.status = status
@@ -495,11 +521,11 @@ private final class MockTaskNotificationClient: TaskNotificationClient {
         completion(addError)
     }
 
-    func setResponseHandler(_ handler: @escaping (String?) -> Void) {
+    func setResponseHandler(_ handler: @escaping () -> Void) {
         responseHandler = handler
     }
 
-    func open(taskKey: String?) {
-        responseHandler?(taskKey)
+    func open() {
+        responseHandler?()
     }
 }

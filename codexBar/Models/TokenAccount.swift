@@ -8,7 +8,8 @@ struct TokenAccount: Codable, Identifiable {
     var accessToken: String
     var refreshToken: String
     var idToken: String
-    var expiresAt: Date?
+    var expiresAt: Date?              // 订阅到期时间（兼容已有 expires_at 数据）
+    var accessTokenExpiresAt: Date?   // access token 自身的 JWT exp
     var planType: String
     var weeklyUsedPercent: Double    // 7d 窗口已使用%
     var weeklyResetAt: Date?         // 7d 窗口重置绝对时间
@@ -17,7 +18,8 @@ struct TokenAccount: Codable, Identifiable {
     var lastChecked: Date?
     var isActive: Bool
     var isSuspended: Bool       // 403 = 账号被封禁/停用
-    var tokenExpired: Bool       // 401 = token 过期，需重新授权
+    var tokenExpired: Bool       // 授权失效，需重新授权
+    var authorizationInvalidConfirmed: Bool // 新版多次确认或刷新凭据被明确拒绝
     var organizationName: String?
 
     enum CodingKeys: String, CodingKey {
@@ -29,6 +31,7 @@ struct TokenAccount: Codable, Identifiable {
         case refreshToken = "refresh_token"
         case idToken = "id_token"
         case expiresAt = "expires_at"
+        case accessTokenExpiresAt = "access_token_expires_at"
         case planType = "plan_type"
         case weeklyUsedPercent = "weekly_used_percent"
         case weeklyResetAt = "weekly_reset_at"
@@ -38,6 +41,7 @@ struct TokenAccount: Codable, Identifiable {
         case isActive = "is_active"
         case isSuspended = "is_suspended"
         case tokenExpired = "token_expired"
+        case authorizationInvalidConfirmed = "authorization_invalid_confirmed"
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -57,6 +61,7 @@ struct TokenAccount: Codable, Identifiable {
         refreshToken = try c.decode(String.self, forKey: .refreshToken)
         idToken = try c.decode(String.self, forKey: .idToken)
         expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
+        accessTokenExpiresAt = try c.decodeIfPresent(Date.self, forKey: .accessTokenExpiresAt)
         planType = try c.decodeIfPresent(String.self, forKey: .planType) ?? "free"
         lastChecked = try c.decodeIfPresent(Date.self, forKey: .lastChecked)
 
@@ -88,16 +93,22 @@ struct TokenAccount: Codable, Identifiable {
         isActive = try c.decodeIfPresent(Bool.self, forKey: .isActive) ?? false
         isSuspended = try c.decodeIfPresent(Bool.self, forKey: .isSuspended) ?? false
         tokenExpired = try c.decodeIfPresent(Bool.self, forKey: .tokenExpired) ?? false
+        authorizationInvalidConfirmed = try c.decodeIfPresent(
+            Bool.self,
+            forKey: .authorizationInvalidConfirmed
+        ) ?? false
         organizationName = try c.decodeIfPresent(String.self, forKey: .organizationName)
     }
 
     init(email: String = "", accountId: String = "", chatgptAccountId: String = "", accessToken: String = "",
          refreshToken: String = "", idToken: String = "", expiresAt: Date? = nil,
+         accessTokenExpiresAt: Date? = nil,
          planType: String = "free", weeklyUsedPercent: Double = 0,
          weeklyResetAt: Date? = nil,
          rateLimitResetCreditsAvailableCount: Int? = nil,
          rateLimitResetCreditsExpiresAt: Date? = nil,
          lastChecked: Date? = nil, isActive: Bool = false, isSuspended: Bool = false, tokenExpired: Bool = false,
+         authorizationInvalidConfirmed: Bool = false,
          organizationName: String? = nil) {
         self.email = email
         self.accountId = accountId
@@ -106,6 +117,7 @@ struct TokenAccount: Codable, Identifiable {
         self.refreshToken = refreshToken
         self.idToken = idToken
         self.expiresAt = expiresAt
+        self.accessTokenExpiresAt = accessTokenExpiresAt
         self.planType = planType
         self.weeklyUsedPercent = weeklyUsedPercent
         self.weeklyResetAt = weeklyResetAt
@@ -115,6 +127,7 @@ struct TokenAccount: Codable, Identifiable {
         self.isActive = isActive
         self.isSuspended = isSuspended
         self.tokenExpired = tokenExpired
+        self.authorizationInvalidConfirmed = authorizationInvalidConfirmed
         self.organizationName = organizationName
     }
 

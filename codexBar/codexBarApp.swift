@@ -9,12 +9,13 @@ struct codexBarApp: App {
         // 单元测试会把测试包注入应用进程；此时禁止启动真实刷新、hooks 和更新任务。
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
 
+        TokenStore.shared.startMonitoringActiveAuthFile()
         // App 级后台续期，脱离菜单 View 生命周期（菜单关闭时 View 不存在，其内 Timer 不跑）
         BackgroundRefresher.shared.start(interval: RefreshFrequencySettings.shared.selection.backgroundInterval)
         CodexRadarService.shared.start()
         CodexHookInstallerService.shared.start()
-        TaskCenterService.shared.onRequestOpenTaskCenter = { taskKey in
-            TaskCenterWindowCoordinator.shared.open(taskKey: taskKey)
+        TaskCenterService.shared.onRequestOpenCodex = {
+            CodexApplicationActivator.activate()
         }
         TaskCenterService.shared.start()
         AppUpdateService.shared.startPeriodicChecks()
@@ -33,26 +34,6 @@ struct codexBarApp: App {
         Settings {
             EmptyView()
         }
-
-        Window(L.taskCenterTitle, id: TaskCenterWindowCoordinator.sceneID) {
-            TaskCenterView()
-                .background(
-                    TaskCenterWindowAccessor { window in
-                        TaskCenterWindowCoordinator.shared.register(window)
-                    }
-                )
-                .handlesExternalEvents(
-                    preferring: [TaskCenterWindowCoordinator.externalEventMatch],
-                    allowing: [TaskCenterWindowCoordinator.externalEventMatch]
-                )
-                .onOpenURL { url in
-                    TaskCenterWindowCoordinator.shared.handle(url)
-                }
-        }
-        .defaultSize(width: 560, height: 480)
-        .defaultLaunchBehavior(.suppressed)
-        .restorationBehavior(.disabled)
-        .handlesExternalEvents(matching: [TaskCenterWindowCoordinator.externalEventMatch])
     }
 }
 
@@ -199,7 +180,7 @@ private final class AppStatusBarController: NSObject {
             light: light,
             showStatusLights: quotaDisplay.showStatusLights
         )
-        button.toolTip = Self.taskCenterToolTip(
+        button.toolTip = Self.taskStatusToolTip(
             snapshot: taskCenter.snapshot,
             hookState: codexHookInstaller.state
         )
@@ -212,6 +193,7 @@ private final class AppStatusBarController: NSObject {
               let language,
               let refreshFrequency,
               let quotaDisplay,
+              let taskCenter,
               let codexHookInstaller else { return }
 
         let popover = NSPopover()
@@ -225,6 +207,7 @@ private final class AppStatusBarController: NSObject {
                 .environmentObject(language)
                 .environmentObject(refreshFrequency)
                 .environmentObject(quotaDisplay)
+                .environmentObject(taskCenter)
                 .environmentObject(codexHookInstaller)
                 .environmentObject(AppUpdateService.shared)
         )
@@ -263,17 +246,17 @@ private final class AppStatusBarController: NSObject {
         return "terminal.fill"
     }
 
-    private static func taskCenterToolTip(
+    private static func taskStatusToolTip(
         snapshot: TaskCenterSnapshot,
         hookState: CodexHookInstallState
     ) -> String {
         guard !hookState.needsAction else { return L.codexHookTooltipNeedsInstall }
-        let summary = L.taskCenterSummary(
+        let summary = L.taskStatusSummary(
             needsAttention: snapshot.needsAttentionCount,
             running: snapshot.runningCount
         )
         guard let record = snapshot.mostUrgent else { return summary }
-        return "\(summary) · \(record.projectName) · \(L.taskCenterPhase(record.phase))"
+        return "\(summary) · \(record.projectName) · \(L.taskStatusPhase(record.phase))"
     }
 }
 

@@ -9,6 +9,7 @@ struct MenuBarView: View {
     @EnvironmentObject var language: LanguageSettings
     @EnvironmentObject var refreshFrequency: RefreshFrequencySettings
     @EnvironmentObject var quotaDisplay: QuotaDisplaySettings
+    @EnvironmentObject var taskCenter: TaskCenterService
     @EnvironmentObject var codexHookInstaller: CodexHookInstallerService
     @EnvironmentObject var appUpdater: AppUpdateService
     @State private var isRefreshing = false
@@ -19,6 +20,7 @@ struct MenuBarView: View {
     @State private var lastVisibleRefresh = Date()
     @State private var showRefreshCompleted = false
     @State private var refreshFeedbackHideTask: Task<Void, Never>?
+    @State private var isEnablingTaskNotifications = false
 
     // 每秒刷新相对时间显示，并按用户选择的频率决定是否拉取额度。
     private let tickTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -202,10 +204,16 @@ struct MenuBarView: View {
 
             CodexRadarView()
 
-            Divider()
+            if let attention = TaskAttentionPresentation(snapshot: taskCenter.snapshot) {
+                Divider()
 
-            TaskCenterSummaryView {
-                TaskCenterWindowCoordinator.shared.open()
+                TaskAttentionBannerView(
+                    presentation: attention,
+                    notifications: taskCenter.notificationService,
+                    isEnablingNotifications: isEnablingTaskNotifications,
+                    onOpenCodex: CodexApplicationActivator.activate,
+                    onEnableNotifications: enableTaskNotifications
+                )
             }
 
             Divider()
@@ -460,6 +468,7 @@ struct MenuBarView: View {
         .onAppear {
             menuVisible = true
             lastVisibleRefresh = Date()
+            _ = store.syncActiveCredentialsFromAuthFile()
             store.markActiveAccount()
             codexHookInstaller.refresh()
             Task { await appUpdater.checkForUpdates(silent: true) }
@@ -556,6 +565,20 @@ struct MenuBarView: View {
         } catch {
             showError = L.codexHookInstallFailed(error.localizedDescription)
             showSuccess = nil
+        }
+    }
+
+    private func enableTaskNotifications() {
+        guard !isEnablingTaskNotifications else { return }
+        isEnablingTaskNotifications = true
+        showError = nil
+
+        Task {
+            let enabled = await taskCenter.notificationService.enable()
+            isEnablingTaskNotifications = false
+            if !enabled {
+                showError = L.taskAttentionNotificationPermissionDenied
+            }
         }
     }
 

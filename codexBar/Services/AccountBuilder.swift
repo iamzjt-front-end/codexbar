@@ -58,7 +58,8 @@ struct AccountBuilder {
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             idToken: tokens.idToken,
-            expiresAt: expiresAt ?? tokenExpiresAt,
+            expiresAt: expiresAt,
+            accessTokenExpiresAt: tokenExpiresAt,
             planType: planType
         )
     }

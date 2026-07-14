@@ -8,7 +8,12 @@ final class WhamService {
     private let resetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
     private let httpClient: HTTPDataClient
     private let now: () -> Date
+    private let credentialRefreshService: RefreshService?
+    private let unauthorizedRetryDelayNanoseconds: UInt64
     private var flights: [FlightKey: Task<Void, Never>] = [:]
+    private var unauthorizedSince: [FlightKey: Date] = [:]
+    private let freshCredentialGrace: TimeInterval = 2 * 60
+    private let repeatedUnauthorizedWindow: TimeInterval = 15
 
     private struct FlightKey: Hashable {
         let accountKey: AccountKey
@@ -16,12 +21,22 @@ final class WhamService {
     }
 
     convenience init() {
-        self.init(httpClient: URLSessionHTTPDataClient())
+        self.init(
+            httpClient: URLSessionHTTPDataClient(),
+            credentialRefreshService: RefreshService.shared
+        )
     }
 
-    init(httpClient: HTTPDataClient, now: @escaping () -> Date = Date.init) {
+    init(
+        httpClient: HTTPDataClient,
+        now: @escaping () -> Date = Date.init,
+        credentialRefreshService: RefreshService? = nil,
+        unauthorizedRetryDelayNanoseconds: UInt64 = 900_000_000
+    ) {
         self.httpClient = httpClient
         self.now = now
+        self.credentialRefreshService = credentialRefreshService
+        self.unauthorizedRetryDelayNanoseconds = unauthorizedRetryDelayNanoseconds
     }
 
     /// 查询单个账号的 wham usage
@@ -143,9 +158,16 @@ final class WhamService {
         flights[flightKey] = nil
     }
 
-    private func performRefresh(snapshot: CredentialSnapshot, store: TokenStore) async {
+    private func performRefresh(
+        snapshot: CredentialSnapshot,
+        store: TokenStore,
+        remainingGenerationRetries: Int = 1
+    ) async {
         do {
-            async let usageResult = self.fetchUsage(snapshot: snapshot)
+            async let usageResult = self.fetchUsageConfirmingUnauthorized(
+                snapshot: snapshot,
+                store: store
+            )
             async let orgName = self.fetchOrgName(snapshot: snapshot)
             async let resetCredits = self.fetchResetCreditsIfAvailable(snapshot: snapshot)
             let (result, name, credits) = try await (usageResult, orgName, resetCredits)
@@ -159,15 +181,163 @@ final class WhamService {
                 organizationName: name,
                 checkedAt: now()
             )
+            clearUnauthorizedConfirmations(for: snapshot.key)
             _ = store.applyUsagePatch(patch, to: snapshot.key, ifCurrent: snapshot.revision)
         } catch WhamError.deactivatedWorkspace {
             // 402 is a workspace-level state. Preserve the last known account/quota state.
         } catch WhamError.forbidden {
             _ = store.markSuspended(snapshot.key, ifCurrent: snapshot.revision)
+        } catch WhamError.superseded {
+            await retryCurrentGeneration(
+                after: snapshot,
+                store: store,
+                remainingRetries: remainingGenerationRetries
+            )
         } catch WhamError.unauthorized {
-            _ = store.markTokenExpired(snapshot.key, ifCurrent: snapshot.revision)
+            // Codex may have atomically rotated auth.json while this request was in flight.
+            // Reconcile the active authority first; if it is a newer generation, the CAS below
+            // becomes stale and cannot persist a false "expired" state over valid credentials.
+            if snapshot.isActive {
+                _ = store.syncActiveCredentialsFromAuthFile()
+            }
+            guard let current = store.snapshot(for: snapshot.key) else { return }
+            guard current.revision == snapshot.revision else {
+                await retryCurrentGeneration(
+                    after: snapshot,
+                    store: store,
+                    remainingRetries: remainingGenerationRetries
+                )
+                return
+            }
+
+            if !current.isActive,
+               let account = store.account(for: snapshot.key),
+               let credentialRefreshService,
+               credentialRefreshService.canRefreshWithoutUserInteraction(account) {
+                switch await credentialRefreshService.refreshAndPersist(
+                    key: snapshot.key,
+                    store: store
+                ) {
+                case .refreshed, .superseded:
+                    await retryCurrentGeneration(
+                        after: snapshot,
+                        store: store,
+                        remainingRetries: remainingGenerationRetries
+                    )
+                case .needsReauthorization:
+                    // The token endpoint definitively rejected the refresh credential and the
+                    // refresh service already persisted that state.
+                    clearUnauthorizedConfirmations(for: snapshot.key)
+                case .transientFailure, .missing:
+                    // WHAM alone is not authoritative enough to discard a refresh credential.
+                    break
+                }
+                return
+            }
+
+            if shouldPersistUnauthorized(snapshot) {
+                _ = store.markTokenExpired(snapshot.key, ifCurrent: snapshot.revision)
+            } else if let account = store.account(for: snapshot.key),
+                      account.isActive,
+                      account.tokenExpired,
+                      !account.authorizationInvalidConfirmed {
+                // Older releases persisted the first WHAM 401. Treat that legacy flag as
+                // unconfirmed once, while keeping invalid states confirmed by this release
+                // stable across app restarts and auth-directory noise.
+                _ = store.clearTokenExpired(snapshot.key, ifCurrent: snapshot.revision)
+            }
         } catch {
             // 静默失败，保留上次数据
+        }
+    }
+
+    private func retryCurrentGeneration(
+        after snapshot: CredentialSnapshot,
+        store: TokenStore,
+        remainingRetries: Int
+    ) async {
+        guard remainingRetries > 0,
+              let current = store.snapshot(for: snapshot.key),
+              current.revision != snapshot.revision else { return }
+        await performRefresh(
+            snapshot: current,
+            store: store,
+            remainingGenerationRetries: remainingRetries - 1
+        )
+    }
+
+    private func shouldPersistUnauthorized(_ snapshot: CredentialSnapshot) -> Bool {
+        let currentTime = now()
+        if let expiresAt = tokenDateClaim("exp", in: snapshot.accessToken),
+           expiresAt <= currentTime {
+            clearUnauthorizedConfirmations(for: snapshot.key)
+            return true
+        }
+
+        let flightKey = FlightKey(accountKey: snapshot.key, revision: snapshot.revision)
+        if unauthorizedSince[flightKey] == nil {
+            unauthorizedSince[flightKey] = currentTime
+        }
+        if isFreshCredential(snapshot, at: currentTime) {
+            return false
+        }
+        guard let firstFailure = unauthorizedSince[flightKey] else { return false }
+        return currentTime.timeIntervalSince(firstFailure) >= repeatedUnauthorizedWindow
+    }
+
+    private func clearUnauthorizedConfirmations(for key: AccountKey) {
+        unauthorizedSince = unauthorizedSince.filter { $0.key.accountKey != key }
+    }
+
+    private func isFreshCredential(_ snapshot: CredentialSnapshot, at date: Date? = nil) -> Bool {
+        guard let issuedAt = tokenDateClaim("iat", in: snapshot.accessToken)
+            ?? tokenDateClaim("nbf", in: snapshot.accessToken) else { return false }
+        return (date ?? now()).timeIntervalSince(issuedAt) < freshCredentialGrace
+    }
+
+    private func tokenDateClaim(_ name: String, in token: String) -> Date? {
+        let value = AccountBuilder.decodeJWT(token)[name]
+        let seconds: Double?
+        if let double = value as? Double {
+            seconds = double
+        } else if let number = value as? NSNumber {
+            seconds = number.doubleValue
+        } else if let string = value as? String {
+            seconds = Double(string)
+        } else {
+            seconds = nil
+        }
+        return seconds.map { Date(timeIntervalSince1970: $0) }
+    }
+
+    /// A single usage 401 is not enough to persist a reauthorization state. Fresh OAuth
+    /// credentials and auth.json rotations can briefly race the usage service. Reconcile the
+    /// active authority, then confirm once after a short delay using the same generation.
+    private func fetchUsageConfirmingUnauthorized(
+        snapshot: CredentialSnapshot,
+        store: TokenStore
+    ) async throws -> WhamUsageResult {
+        do {
+            return try await fetchUsage(snapshot: snapshot)
+        } catch WhamError.unauthorized {
+            if snapshot.isActive {
+                _ = store.syncActiveCredentialsFromAuthFile()
+            }
+            guard store.snapshot(for: snapshot.key)?.revision == snapshot.revision else {
+                throw WhamError.superseded
+            }
+
+            if unauthorizedRetryDelayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: unauthorizedRetryDelayNanoseconds)
+            }
+            guard !Task.isCancelled else { throw WhamError.superseded }
+            if snapshot.isActive {
+                _ = store.syncActiveCredentialsFromAuthFile()
+            }
+            guard store.snapshot(for: snapshot.key)?.revision == snapshot.revision else {
+                throw WhamError.superseded
+            }
+            return try await fetchUsage(snapshot: snapshot)
         }
     }
 
@@ -455,16 +625,17 @@ struct WhamResetCreditsResult {
 }
 
 enum WhamError: LocalizedError, Equatable {
-    case invalidResponse, unauthorized, deactivatedWorkspace, forbidden, parseError
+    case invalidResponse, unauthorized, deactivatedWorkspace, forbidden, parseError, superseded
     case httpError(Int)
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "无效响应"
-        case .unauthorized: return "Token 已过期"
+        case .unauthorized: return "授权已失效"
         case .deactivatedWorkspace: return "工作区已停用"
         case .forbidden: return "账号被封禁"
         case .parseError: return "解析失败"
+        case .superseded: return "请求已被更新的授权替代"
         case .httpError(let code): return "HTTP \(code)"
         }
     }

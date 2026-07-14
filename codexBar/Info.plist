@@ -12,16 +12,6 @@
 				<string>com.codexbar.oauth</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>CFBundleURLName</key>
-			<string>CodexAppBar Task Center</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>xmasdong.codexappbar</string>
-			</array>
-		</dict>
 	</array>
 </dict>
 </plist>

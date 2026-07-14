@@ -250,7 +250,7 @@ class LocalCallbackServer {
                 <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>Authorized · 授权成功 · CodexAppBar</title>
+                <title>Completing authorization · 正在完成授权 · CodexAppBar</title>
                 <style>
                   * { box-sizing: border-box; margin: 0; padding: 0; }
                   body {
@@ -327,9 +327,9 @@ class LocalCallbackServer {
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
                   </div>
-                  <h1>Authorized · 授权成功</h1>
-                  <p>Account added to CodexAppBar<br>You can close this page.<br><br>账号已添加到 CodexAppBar<br>可以关闭此页面了</p>
-                  <div class="badge">✓ Return to CodexAppBar · 可以返回 CodexAppBar</div>
+                  <h1>Authorization received · 已收到授权</h1>
+                  <p>CodexAppBar is completing token verification.<br>You can close this page and check the app.<br><br>CodexAppBar 正在完成凭据验证<br>可以关闭此页面并返回 App 查看结果</p>
+                  <div class="badge">Return to CodexAppBar · 返回 CodexAppBar</div>
                 </div>
                 </body>
                 </html>

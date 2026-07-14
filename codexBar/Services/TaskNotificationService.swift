@@ -7,12 +7,12 @@ protocol TaskNotificationClient: AnyObject {
     func authorizationStatus(completion: @escaping (UNAuthorizationStatus) -> Void)
     func requestAuthorization(completion: @escaping (Bool) -> Void)
     func add(_ request: UNNotificationRequest, completion: @escaping (Error?) -> Void)
-    func setResponseHandler(_ handler: @escaping (String?) -> Void)
+    func setResponseHandler(_ handler: @escaping () -> Void)
 }
 
 final class SystemTaskNotificationClient: NSObject, TaskNotificationClient, UNUserNotificationCenterDelegate {
     private let center: UNUserNotificationCenter
-    private var responseHandler: ((String?) -> Void)?
+    private var responseHandler: (() -> Void)?
 
     init(center: UNUserNotificationCenter = .current()) {
         self.center = center
@@ -35,7 +35,7 @@ final class SystemTaskNotificationClient: NSObject, TaskNotificationClient, UNUs
         center.add(request, withCompletionHandler: completion)
     }
 
-    func setResponseHandler(_ handler: @escaping (String?) -> Void) {
+    func setResponseHandler(_ handler: @escaping () -> Void) {
         responseHandler = handler
         center.delegate = self
     }
@@ -61,12 +61,11 @@ final class SystemTaskNotificationClient: NSObject, TaskNotificationClient, UNUs
             completionHandler()
             return
         }
-        responseHandler?(response.notification.request.content.userInfo[Self.taskKeyUserInfoKey] as? String)
+        responseHandler?()
         completionHandler()
     }
 
     static let identifierPrefix = "codexbar-task-attention-"
-    static let taskKeyUserInfoKey = "taskKey"
 }
 
 @MainActor
@@ -76,7 +75,7 @@ final class TaskNotificationService: ObservableObject {
     @Published private(set) var isEnabled: Bool
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
-    var onOpenTaskCenter: ((String?) -> Void)?
+    var onOpenCodex: (() -> Void)?
 
     private static let enabledDefaultsKey = "codexbar.taskAttentionNotificationsEnabled"
     private static let notifiedEventKeysDefaultsKey = "codexbar.taskAttentionNotifiedEventKeys"
@@ -102,9 +101,9 @@ final class TaskNotificationService: ObservableObject {
         // authorization status is known before sending anything.
         isEnabled = false
 
-        notificationClient.setResponseHandler { [weak self] taskKey in
+        notificationClient.setResponseHandler { [weak self] in
             Task { @MainActor in
-                self?.onOpenTaskCenter?(taskKey)
+                self?.onOpenCodex?()
             }
         }
     }
@@ -174,7 +173,6 @@ final class TaskNotificationService: ObservableObject {
         content.title = L.taskAttentionNotificationTitle
         content.body = L.taskAttentionNotificationBody
         content.sound = .default
-        content.userInfo = [SystemTaskNotificationClient.taskKeyUserInfoKey: record.taskKey]
         return UNNotificationRequest(
             identifier: SystemTaskNotificationClient.identifierPrefix + dedupeKey,
             content: content,

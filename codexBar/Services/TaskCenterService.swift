@@ -6,10 +6,9 @@ final class TaskCenterService: ObservableObject {
     static let shared = TaskCenterService()
 
     @Published private(set) var snapshot: TaskCenterSnapshot = .empty
-    @Published private(set) var selectedTaskKey: String?
 
     let notificationService: TaskNotificationService
-    var onRequestOpenTaskCenter: ((String?) -> Void)?
+    var onRequestOpenCodex: (() -> Void)?
 
     private let repository: TaskActivityRepository
     private let now: () -> Date
@@ -32,10 +31,8 @@ final class TaskCenterService: ObservableObject {
         self.notificationService = notificationService
         self.now = now
 
-        notificationService.onOpenTaskCenter = { [weak self] taskKey in
-            guard let self else { return }
-            self.selectTask(taskKey)
-            self.onRequestOpenTaskCenter?(taskKey)
+        notificationService.onOpenCodex = { [weak self] in
+            self?.onRequestOpenCodex?()
         }
     }
 
@@ -62,16 +59,6 @@ final class TaskCenterService: ObservableObject {
         } else {
             apply(repository.load())
         }
-    }
-
-    func selectTask(_ taskKey: String?) {
-        selectedTaskKey = taskKey
-    }
-
-    @discardableResult
-    func consumeSelectedTaskKey() -> String? {
-        defer { selectedTaskKey = nil }
-        return selectedTaskKey
     }
 
     private func apply(_ result: TaskActivityLoadResult) {

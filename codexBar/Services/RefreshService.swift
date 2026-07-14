@@ -28,7 +28,7 @@ final class RefreshService {
         let accessToken: String
         let refreshToken: String
         let idToken: String
-        let expiresAt: Date?
+        let accessTokenExpiresAt: Date?
     }
 
     enum RefreshError: LocalizedError {
@@ -64,7 +64,10 @@ final class RefreshService {
 
     func needsRefresh(_ account: TokenAccount) -> Bool {
         guard canRefreshWithoutUserInteraction(account) else { return false }
-        guard let expiration = account.expiresAt else { return true }
+        let expiration = account.accessTokenExpiresAt
+            ?? (AccountBuilder.decodeJWT(account.accessToken)["exp"] as? Double)
+                .map { Date(timeIntervalSince1970: $0) }
+        guard let expiration else { return true }
         return expiration.timeIntervalSinceNow < renewThreshold
     }
 
@@ -119,7 +122,7 @@ final class RefreshService {
                 accessToken: fresh.accessToken,
                 refreshToken: fresh.refreshToken,
                 idToken: fresh.idToken,
-                expiresAt: fresh.expiresAt
+                accessTokenExpiresAt: fresh.accessTokenExpiresAt
             )
             switch try store.commitRefreshedCredentials(
                 credentials,
@@ -207,11 +210,11 @@ final class RefreshService {
             throw RefreshError.serverError("HTTP \(http.statusCode)")
         }
         guard let accessToken = json["access_token"] as? String,
-              let idToken = json["id_token"] as? String,
-              !accessToken.isEmpty,
-              !idToken.isEmpty else {
+              !accessToken.isEmpty else {
             throw RefreshError.invalidResponse
         }
+        let idToken = (json["id_token"] as? String) ?? snapshot.idToken
+        guard !idToken.isEmpty else { throw RefreshError.invalidResponse }
         let refreshToken = json["refresh_token"] as? String ?? snapshot.refreshToken
         guard !refreshToken.isEmpty else { throw RefreshError.invalidResponse }
         let expiration = (AccountBuilder.decodeJWT(accessToken)["exp"] as? Double)
@@ -220,7 +223,7 @@ final class RefreshService {
             accessToken: accessToken,
             refreshToken: refreshToken,
             idToken: idToken,
-            expiresAt: expiration
+            accessTokenExpiresAt: expiration
         )
     }
 
