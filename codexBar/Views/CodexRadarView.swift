@@ -4,31 +4,54 @@ import SwiftUI
 struct CodexRadarView: View {
     @EnvironmentObject var language: LanguageSettings
     @ObservedObject private var radar = CodexRadarService.shared
+    @State private var hoveredCellID: String?
+
+    private var matrix: CodexRadarMatrix {
+        CodexRadarPresentation.matrix(from: radar.snapshot?.modelIQ)
+    }
+
+    private var displayedCell: CodexRadarMatrixCell? {
+        matrix.cell(id: hoveredCellID)
+            ?? matrix.cell(id: matrix.bestCellID)
+    }
 
     var body: some View {
         let _ = language.identity
 
-        VStack(alignment: .leading, spacing: 8) {
-            header
+        VStack(alignment: .leading, spacing: PopupSpacing.regular) {
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                header(now: context.date)
+            }
 
-            if let latest = radar.snapshot?.modelIQ?.latest {
-                qualitySummary(latest)
-                comparisonList
-            } else {
+            if matrix.rows.isEmpty {
                 emptyState
+            } else {
+                CodexRadarMatrixView(
+                    matrix: matrix,
+                    hoveredCellID: $hoveredCellID
+                )
+
+                if let displayedCell {
+                    qualityDetail(displayedCell)
+                }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .frame(width: 300 - PopupSpacing.section * 2, alignment: .leading)
+        .padding(.horizontal, PopupSpacing.section)
+        .padding(.vertical, PopupSpacing.regular)
         .onAppear {
+            reconcileHover()
             if radar.needsVisibleRefresh {
                 Task { await radar.refresh() }
             }
         }
+        .onChange(of: matrix.signature) {
+            reconcileHover()
+        }
     }
 
-    private var header: some View {
-        HStack(spacing: 7) {
+    private func header(now: Date) -> some View {
+        HStack(spacing: PopupSpacing.regular) {
             Image(systemName: "gauge.with.dots.needle.67percent")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.accentColor)
@@ -38,7 +61,7 @@ struct CodexRadarView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.primary)
 
-            if let updatedText {
+            if let updatedText = freshnessText(now: now) {
                 Text(updatedText)
                     .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.secondary)
@@ -46,7 +69,7 @@ struct CodexRadarView: View {
                     .monospacedDigit()
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: PopupSpacing.compact)
 
             Button {
                 Task { await radar.refresh() }
@@ -81,66 +104,8 @@ struct CodexRadarView: View {
         }
     }
 
-    @ViewBuilder
-    private func qualitySummary(_ latest: CodexRadarModelIQEntry) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(modelName(for: latest))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-
-                    Text(passLine(for: latest))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                }
-
-                Spacer(minLength: 6)
-
-                VStack(alignment: .trailing, spacing: -1) {
-                    Text(scoreText(latest.score))
-                        .font(.system(size: 25, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundColor(statusColor(latest.status))
-                        .minimumScaleFactor(0.78)
-                        .lineLimit(1)
-                        .contentTransition(.numericText())
-
-                    Text("IQ")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(0.045))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(statusColor(latest.status).opacity(0.28), lineWidth: 0.8)
-                    )
-            )
-        }
-    }
-
-    private var comparisonList: some View {
-        let comparisons = orderedComparisons
-
-        return VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(comparisons.prefix(3)), id: \.id) { item in
-                comparisonLine(item)
-            }
-        }
-    }
-
     private var emptyState: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: PopupSpacing.regular) {
             Image(systemName: radar.lastError == nil ? "ellipsis" : "wifi.exclamationmark")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.secondary)
@@ -155,51 +120,29 @@ struct CodexRadarView: View {
         .frame(minHeight: 36)
     }
 
-    private func comparisonLine(_ item: RadarComparisonItem) -> some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(statusColor(item.entry.status))
-                .frame(width: 5, height: 5)
-
-            Text(item.shortLabel)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(alignment: .center, spacing: 4) {
-                Text("IQ")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-
-                Text(scoreText(item.entry.score))
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundColor(statusColor(item.entry.status))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.88)
-                    .allowsTightening(true)
-            }
-            .frame(width: 62, alignment: .trailing)
-            .layoutPriority(1)
-        }
-        .frame(height: 22)
-        .padding(.horizontal, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color.primary.opacity(0.028))
+    private func qualityDetail(_ cell: CodexRadarMatrixCell) -> some View {
+        Text(
+            L.modelQualityDetail(
+                model: cell.displayName,
+                score: CodexRadarPresentation.scoreText(cell.score),
+                passCount: cell.passCountText,
+                rank: matrix.rank(of: cell)
+            )
         )
-        .accessibilityElement(children: .combine)
-    }
-
-    private var updatedText: String? {
-        guard let date = radar.snapshot?.monitoredAt ?? radar.lastFetchAt else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
-        formatter.dateFormat = "MM-dd HH:mm"
-        return formatter.string(from: date)
+        .font(.system(size: 9.5, weight: .medium))
+        .foregroundColor(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.78)
+        .monospacedDigit()
+        .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
+        .accessibilityLabel(
+            L.modelQualityCellAccessibility(
+                model: cell.displayName,
+                score: CodexRadarPresentation.scoreText(cell.score),
+                passCount: cell.passCountText,
+                rank: matrix.rank(of: cell)
+            )
+        )
     }
 
     private var emptyText: String {
@@ -212,81 +155,175 @@ struct CodexRadarView: View {
         return L.modelQualityNoData
     }
 
-    private var orderedComparisons: [RadarComparisonItem] {
-        guard let comparisons = radar.snapshot?.modelIQ?.comparisons else { return [] }
-        let preferredOrder = ["gpt_55_high", "gpt_55_medium", "gpt_54_xhigh"]
-        return comparisons
-            .compactMap { key, comparison -> RadarComparisonItem? in
-                guard let latest = comparison.latest else { return nil }
-                return RadarComparisonItem(
-                    id: key,
-                    label: comparison.label ?? modelName(
-                        model: comparison.model ?? latest.model,
-                        effort: comparison.reasoningEffort ?? latest.reasoningEffort
-                    ),
-                    entry: latest
-                )
-            }
-            .sorted {
-                let left = preferredOrder.firstIndex(of: $0.id) ?? Int.max
-                let right = preferredOrder.firstIndex(of: $1.id) ?? Int.max
-                if left != right { return left < right }
-                return $0.label < $1.label
-            }
-    }
+    private func freshnessText(now: Date) -> String? {
+        guard let date = radar.lastFetchAt ?? radar.snapshot?.monitoredAt else { return nil }
+        let interval = max(0, now.timeIntervalSince(date))
 
-    private func modelName(for entry: CodexRadarModelIQEntry) -> String {
-        modelName(model: entry.model, effort: entry.reasoningEffort)
-    }
-
-    private func modelName(model: String?, effort: String?) -> String {
-        let modelText = model?.uppercased() ?? "Codex"
-        guard let effort, !effort.isEmpty else { return modelText }
-        return "\(modelText) \(effort)"
-    }
-
-    private func scoreText(_ score: Double?) -> String {
-        guard let score else { return "--" }
-        return String(format: "%.1f", score)
-    }
-
-    private func passLine(for entry: CodexRadarModelIQEntry) -> String {
-        guard let passed = entry.passed,
-              let tasks = entry.tasks,
-              let baseline = baselinePassed(for: entry),
-              let dateText = displayDateText(entry.date) else {
-            return L.modelQualityBenchmarkNote
+        if interval < 60 {
+            return L.modelQualityJustNow
         }
-        return L.modelQualityPassLine(
-            date: dateText,
-            passed: "\(passed)",
-            tasks: "\(tasks)",
-            baseline: "\(baseline)"
-        )
-    }
-
-    private func baselinePassed(for entry: CodexRadarModelIQEntry) -> Int? {
-        guard let passed = entry.passed, let score = entry.score, score > 0 else { return nil }
-        return Int((Double(passed) * 100 / score).rounded())
-    }
-
-    private func displayDateText(_ rawDate: String?) -> String? {
-        guard let rawDate, !rawDate.isEmpty else { return nil }
-
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.dateFormat = "yyyy-MM-dd"
-
-        guard let date = parser.date(from: rawDate) else { return rawDate }
+        if interval < 60 * 60 {
+            return L.modelQualityMinutesAgo(max(1, Int(interval / 60)))
+        }
+        if interval < 24 * 60 * 60 {
+            return L.modelQualityHoursAgo(max(1, Int(interval / (60 * 60))))
+        }
 
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: L.zh ? "zh_CN" : "en_US_POSIX")
-        formatter.dateFormat = L.zh ? "M月d日" : "MMM d"
+        formatter.dateFormat = "MM-dd HH:mm"
         return formatter.string(from: date)
     }
 
-    private func statusColor(_ status: String?) -> Color {
-        switch status?.lowercased() {
+    private func reconcileHover() {
+        if matrix.cell(id: hoveredCellID) == nil {
+            hoveredCellID = nil
+        }
+    }
+}
+
+struct CodexRadarMatrixView: View {
+    let matrix: CodexRadarMatrix
+    @Binding var hoveredCellID: String?
+
+    private let contentWidth: CGFloat = 300 - PopupSpacing.section * 2
+    private let rowLabelWidth: CGFloat = 67
+    private let columnSpacing: CGFloat = 3
+    private let rowHeight: CGFloat = 34
+
+    private var columnWidth: CGFloat {
+        let spacingWidth = CGFloat(matrix.columns.count) * columnSpacing
+        return max(28, (contentWidth - rowLabelWidth - spacingWidth) / CGFloat(matrix.columns.count))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PopupSpacing.compact) {
+            columnHeader
+
+            ForEach(matrix.rows) { row in
+                HStack(spacing: columnSpacing) {
+                    rowLabel(row)
+
+                    ForEach(matrix.columns) { column in
+                        if let cell = row.cell(for: column.id) {
+                            cellView(cell)
+                        } else {
+                            unavailableCell
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var columnHeader: some View {
+        HStack(spacing: columnSpacing) {
+            Color.clear
+                .frame(width: rowLabelWidth, height: 16)
+
+            ForEach(matrix.columns) { column in
+                Text(column.label)
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(width: columnWidth, height: 16)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func rowLabel(_ row: CodexRadarMatrixRow) -> some View {
+        HStack(spacing: PopupSpacing.compact) {
+            Image(systemName: row.family.symbolName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 15, height: 15)
+                .accessibilityHidden(true)
+
+            Text(row.displayName)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(width: rowLabelWidth, height: rowHeight, alignment: .leading)
+    }
+
+    private func cellView(_ cell: CodexRadarMatrixCell) -> some View {
+        let isHovered = hoveredCellID == cell.id
+        let statusColor = cellStatusColor(cell)
+        let rank = matrix.rank(of: cell)
+        let podiumRank = rank.flatMap { $0 <= 3 ? $0 : nil }
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(statusColor.opacity(isHovered ? 0.09 : 0.055))
+
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    if let podiumRank {
+                        HStack(spacing: 1) {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 8.5, weight: .semibold))
+
+                            Text("\(podiumRank)")
+                                .font(.system(size: 7, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                        }
+                        .foregroundColor(rankColor(podiumRank))
+                        .frame(height: 11)
+                        .accessibilityHidden(true)
+                    }
+                }
+                .frame(height: 12)
+                .padding(.horizontal, 2)
+
+                Text(CodexRadarPresentation.scoreText(cell.score))
+                    .font(.system(size: 9.5, weight: rank == 1 ? .semibold : .medium, design: .rounded))
+                    .foregroundColor(statusColor)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: columnWidth, height: rowHeight)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering {
+                hoveredCellID = cell.id
+            } else if hoveredCellID == cell.id {
+                hoveredCellID = nil
+            }
+        }
+        .help(L.modelQualityCellHelp(model: cell.displayName, passCount: cell.passCountText))
+        .accessibilityLabel(
+            L.modelQualityCellAccessibility(
+                model: cell.displayName,
+                score: CodexRadarPresentation.scoreText(cell.score),
+                passCount: cell.passCountText,
+                rank: rank
+            )
+        )
+    }
+
+    private var unavailableCell: some View {
+        Text("–")
+            .font(.system(size: 9.5, weight: .medium, design: .rounded))
+            .foregroundColor(.secondary.opacity(0.48))
+            .frame(width: columnWidth, height: rowHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.primary.opacity(0.018))
+            )
+            .accessibilityHidden(true)
+    }
+
+    private func cellStatusColor(_ cell: CodexRadarMatrixCell) -> Color {
+        switch cell.entry.status?.lowercased() {
         case "green":
             return CodexStatusPalette.ok
         case "yellow":
@@ -294,7 +331,18 @@ struct CodexRadarView: View {
         case "red":
             return CodexStatusPalette.danger
         default:
-            return .accentColor
+            return .primary
+        }
+    }
+
+    private func rankColor(_ rank: Int) -> Color {
+        switch rank {
+        case 1:
+            return Color(red: 0.82, green: 0.58, blue: 0.08)
+        case 2:
+            return Color(red: 0.47, green: 0.52, blue: 0.58)
+        default:
+            return Color(red: 0.68, green: 0.38, blue: 0.20)
         }
     }
 }
@@ -308,7 +356,7 @@ struct CodexResetWindowTipView: View {
         let _ = language.identity
 
         if let resetWindow {
-            HStack(spacing: 8) {
+            HStack(spacing: PopupSpacing.regular) {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundColor(infoAccent)
@@ -324,7 +372,7 @@ struct CodexResetWindowTipView: View {
                     .minimumScaleFactor(0.76)
                     .monospacedDigit()
 
-                Spacer(minLength: 6)
+                Spacer(minLength: PopupSpacing.regular)
 
                 Button {
                     NSWorkspace.shared.open(resetWindow.sourceURL ?? radar.homepageURL)
@@ -340,7 +388,7 @@ struct CodexResetWindowTipView: View {
                 .accessibilityLabel(L.codexResetWindowSourceHelp)
             }
             .frame(height: 31)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, PopupSpacing.regular)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(infoAccent.opacity(0.075))
@@ -349,8 +397,8 @@ struct CodexResetWindowTipView: View {
                             .strokeBorder(infoAccent.opacity(0.14), lineWidth: 0.8)
                     )
             )
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, PopupSpacing.section)
+            .padding(.bottom, PopupSpacing.regular)
             .help(resetWindow.message ?? L.codexResetWindowFallback)
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
@@ -380,17 +428,5 @@ struct CodexResetWindowTipView: View {
         formatter.timeZone = .current
         formatter.dateFormat = L.zh ? "M/d HH:mm" : "MMM d HH:mm"
         return formatter.string(from: date)
-    }
-}
-
-private struct RadarComparisonItem {
-    let id: String
-    let label: String
-    let entry: CodexRadarModelIQEntry
-
-    var shortLabel: String {
-        label
-            .replacingOccurrences(of: "GPT-", with: "")
-            .replacingOccurrences(of: " ", with: "-")
     }
 }

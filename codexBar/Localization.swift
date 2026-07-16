@@ -161,13 +161,6 @@ enum L {
     static func refreshFrequencyHelp(_ detail: String) -> String {
         zh ? "额度刷新频率：\(detail)" : "Quota refresh frequency: \(detail)"
     }
-    static var quotaDisplayNumbers: String { zh ? "数字" : "Numbers" }
-    static var quotaDisplayBars: String { zh ? "进度条" : "Bars" }
-    static var quotaDisplayNumbersShort: String { zh ? "数字" : "123" }
-    static var quotaDisplayBarsShort: String { zh ? "进度" : "Bars" }
-    static func quotaDisplayModeHelp(_ detail: String) -> String {
-        zh ? "顶部额度展示：\(detail)" : "Menu bar quota display: \(detail)"
-    }
     static var quotaAmountUsed: String { zh ? "已用额度" : "Used quota" }
     static var quotaAmountRemaining: String { zh ? "剩余额度" : "Remaining quota" }
     static var quotaAmountUsedShort: String { zh ? "已用" : "Used" }
@@ -368,15 +361,56 @@ enum L {
     static var modelQualityTitle: String { zh ? "模型质量" : "Model Quality" }
     static var modelQualityRefreshHelp: String { zh ? "刷新模型质量" : "Refresh model quality" }
     static var modelQualityOpenHelp: String { zh ? "打开 CodexRadar" : "Open CodexRadar" }
-    static var modelQualityBenchmarkNote: String {
-        zh ? "固定 DeepSWE 任务集，分数越高越好" : "Fixed DeepSWE benchmark, higher is better"
+    static var modelQualityJustNow: String { zh ? "刚刚" : "Just now" }
+    static func modelQualityMinutesAgo(_ minutes: Int) -> String {
+        zh ? "\(minutes) 分钟前" : "\(minutes)m ago"
     }
-    static func modelQualityPassLine(date: String, passed: String, tasks: String, baseline: String) -> String {
+    static func modelQualityHoursAgo(_ hours: Int) -> String {
+        zh ? "\(hours) 小时前" : "\(hours)h ago"
+    }
+    static func modelQualityDetail(
+        model: String,
+        score: String,
+        passCount: String?,
+        rank: Int?
+    ) -> String {
+        let prefix: String? = rank.map { zh ? "第 \($0) 名" : "No. \($0)" }
         if zh {
-            return "\(date) \(passed)/\(tasks) 通过，基线 \(baseline)/\(tasks)"
+            if let passCount {
+                return [prefix, "\(model) · IQ \(score) · 通过 \(passCount) 题"]
+                    .compactMap { $0 }
+                    .joined(separator: "：")
+            }
+            return [prefix, "\(model) · IQ \(score)"]
+                .compactMap { $0 }
+                .joined(separator: "：")
         }
-        return "\(date) \(passed)/\(tasks) passed, baseline \(baseline)/\(tasks)"
+        if let passCount {
+            return [prefix, "\(model) · IQ \(score) · \(passCount) passed"]
+                .compactMap { $0 }
+                .joined(separator: ": ")
+        }
+        return [prefix, "\(model) · IQ \(score)"]
+            .compactMap { $0 }
+            .joined(separator: ": ")
     }
+    static func modelQualityCellHelp(model: String, passCount: String?) -> String {
+        guard let passCount else { return model }
+        return zh ? "\(model)，通过 \(passCount) 题" : "\(model), \(passCount) passed"
+    }
+    static func modelQualityCellAccessibility(
+        model: String,
+        score: String,
+        passCount: String?,
+        rank: Int? = nil
+    ) -> String {
+        let prefix = rank.map { zh ? "第 \($0) 名，" : "No. \($0), " } ?? ""
+        guard let passCount else { return zh ? "\(prefix)\(model)，IQ \(score)" : "\(prefix)\(model), IQ \(score)" }
+        return zh
+            ? "\(prefix)\(model)，IQ \(score)，通过 \(passCount) 题"
+            : "\(prefix)\(model), IQ \(score), \(passCount) passed"
+    }
+
     static var modelQualityReading: String { zh ? "正在读取 codexradar.com" : "Reading codexradar.com" }
     static var modelQualityNoData: String { zh ? "暂无模型质量数据" : "No model quality data" }
 }
