@@ -22,9 +22,9 @@ struct AccountRowView: View {
         let weeklyResetDescription = account.weeklyResetDescription
         let showWeeklyReset = !weeklyResetDescription.isEmpty
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: PopupSpacing.compact) {
             // Line 1: org name + plan badge + active mark + switch button
-            HStack(spacing: 4) {
+            HStack(spacing: PopupSpacing.compact) {
                 Circle()
                     .fill(statusColor)
                     .frame(width: 7, height: 7)
@@ -42,7 +42,9 @@ struct AccountRowView: View {
                     .foregroundColor(planBadgeColor)
                     .cornerRadius(3)
 
-                resetCreditsBadge
+                if hasResetCredits {
+                    resetCreditsBadge
+                }
 
                 if isActive {
                     Image(systemName: "checkmark.circle.fill")
@@ -96,10 +98,11 @@ struct AccountRowView: View {
                             .buttonStyle(.borderedProminent)
                             .focusable(false)
                             .controlSize(.mini)
-                            .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if shouldShowResetCreditsExpiration {
                 resetCreditsExpirationInfo
@@ -107,7 +110,7 @@ struct AccountRowView: View {
 
             // Line 2: usage info
             if account.tokenExpired {
-                HStack(spacing: 4) {
+                HStack(spacing: PopupSpacing.compact) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
                         .foregroundColor(.orange)
@@ -117,7 +120,7 @@ struct AccountRowView: View {
                     Spacer()
                 }
             } else if account.isBanned {
-                HStack(spacing: 4) {
+                HStack(spacing: PopupSpacing.compact) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 10))
                         .foregroundColor(.red)
@@ -136,12 +139,11 @@ struct AccountRowView: View {
                 )
             }
         }
-        .padding(.vertical, 5)
-        .padding(.leading, 16)   // indent under email header
-        .padding(.trailing, 8)
+        .padding(.vertical, PopupSpacing.regular)
+        .padding(.horizontal, PopupSpacing.regular)
         .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(isActive ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.045))
         )
         .overlay(alignment: .leading) {
             if isActive {
@@ -211,6 +213,11 @@ struct AccountRowView: View {
         return L.resetCreditsCount(count)
     }
 
+    private var hasResetCredits: Bool {
+        guard let count = account.rateLimitResetCreditsAvailableCount else { return false }
+        return count > 0
+    }
+
     private var resetCreditsColor: Color {
         guard let count = account.rateLimitResetCreditsAvailableCount, count > 0 else {
             return .secondary
@@ -228,18 +235,18 @@ struct AccountRowView: View {
     }
 
     private var resetCreditsExpirationInfo: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: PopupSpacing.compact) {
             Image(systemName: resetCreditsExpirationIcon)
                 .font(.system(size: 10, weight: .semibold))
             Text(resetCreditsExpirationText)
                 .font(.system(size: 10, weight: .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-            Spacer(minLength: 4)
+            Spacer(minLength: PopupSpacing.compact)
         }
         .foregroundColor(resetCreditsExpirationColor)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, PopupSpacing.regular)
+        .padding(.vertical, PopupSpacing.compact)
         .background(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(resetCreditsExpirationColor.opacity(0.2))
@@ -287,8 +294,8 @@ struct AccountRowView: View {
         resetDescription: String,
         showReset: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 2) {
+        VStack(alignment: .leading, spacing: PopupSpacing.compact) {
+            HStack(spacing: PopupSpacing.compact) {
                 Text(label)
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
@@ -301,8 +308,10 @@ struct AccountRowView: View {
             }
             ProgressView(value: min(displayPercent / 100, 1.0))
                 .tint(usageColor(usedPercent))
-                .scaleEffect(x: 1, y: 0.7)
+                .scaleEffect(x: 1, y: 0.9)
+                .frame(height: 5)
                 .animation(.easeInOut(duration: 0.4), value: displayPercent)
+
             if showReset {
                 Text("\(label): \(resetDescription)")
                     .font(.system(size: 9))

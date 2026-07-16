@@ -5,14 +5,14 @@ struct TokenStatsView: View {
     @ObservedObject var service: TokenStatsService = .shared
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: PopupSpacing.regular) {
             TokenRangeSegmentedControl(selection: Binding(
                 get: { service.range },
                 set: { service.switchTo($0) }
             ))
             .id(language.identity)
 
-            HStack(spacing: 5) {
+            HStack(spacing: PopupSpacing.compact) {
                 Text(service.stat.map { TokenFormat.compact($0.totalTokens) } ?? "--")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundColor(service.stat == nil ? .secondary : .accentColor)
@@ -36,8 +36,8 @@ struct TokenStatsView: View {
             ContributionHeatmap(daily: service.daily)
                 .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, PopupSpacing.section)
+        .padding(.vertical, PopupSpacing.regular)
         .onAppear { service.refresh() }
     }
 }

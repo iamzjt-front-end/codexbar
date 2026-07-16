@@ -115,11 +115,6 @@ private final class AppStatusBarController: NSObject {
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
 
-        quotaDisplay.$mode
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateStatusItem() }
-            .store(in: &cancellables)
-
         quotaDisplay.$amountMode
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
@@ -160,7 +155,6 @@ private final class AppStatusBarController: NSObject {
         let iconName = Self.iconName(from: store)
         let width = StatusBarCapsuleView.width(
             for: quotaState,
-            mode: quotaDisplay.mode,
             showStatusLights: quotaDisplay.showStatusLights
         )
         let light: CodexSessionLight = codexHookInstaller.state.needsAction
@@ -176,7 +170,6 @@ private final class AppStatusBarController: NSObject {
         capsuleView.configure(
             iconName: iconName,
             quotaState: quotaState,
-            mode: quotaDisplay.mode,
             light: light,
             showStatusLights: quotaDisplay.showStatusLights
         )
@@ -324,7 +317,6 @@ private final class StatusBarCapsuleView: NSView {
     private let barsView = StatusQuotaBarsView()
     private let lightsView = StatusTrafficLightsView(dotSize: dotSize, dotGap: dotGap)
     private var quotaState = StatusBarQuotaState.empty
-    private var quotaMode: QuotaDisplayMode = .numbers
     private var showStatusLights = true
 
     override init(frame frameRect: NSRect) {
@@ -341,9 +333,9 @@ private final class StatusBarCapsuleView: NSView {
         nil
     }
 
-    static func width(for quotaState: StatusBarQuotaState, mode: QuotaDisplayMode, showStatusLights: Bool) -> CGFloat {
-        let contentWidth = contentWidth(for: quotaState, mode: mode)
-        let contentGap = mode == .bars && quotaState.hasBars ? barsGap : textGap
+    static func width(for quotaState: StatusBarQuotaState, showStatusLights: Bool) -> CGFloat {
+        let contentWidth = contentWidth(for: quotaState)
+        let contentGap = quotaState.hasBars ? barsGap : textGap
         let statusLightsWidth = showStatusLights ? lightGap + lightsWidth : 0
         return leftPadding + iconSize + contentGap + contentWidth + statusLightsWidth + rightPadding
     }
@@ -351,13 +343,11 @@ private final class StatusBarCapsuleView: NSView {
     func configure(
         iconName: String,
         quotaState: StatusBarQuotaState,
-        mode: QuotaDisplayMode,
         light: CodexSessionLight,
         showStatusLights: Bool
     ) {
         iconView.image = Self.statusIcon(systemName: iconName)
         self.quotaState = quotaState
-        quotaMode = mode
         self.showStatusLights = showStatusLights
         if textField.stringValue != quotaState.text {
             textField.stringValue = quotaState.text
@@ -375,9 +365,9 @@ private final class StatusBarCapsuleView: NSView {
         super.layout()
 
         let textSize = (textField.stringValue as NSString).size(withAttributes: Self.textAttributes)
-        let useBars = quotaMode == .bars && quotaState.hasBars
+        let useBars = quotaState.hasBars
         let contentGap = useBars ? Self.barsGap : Self.textGap
-        let contentWidth = Self.contentWidth(for: quotaState, mode: quotaMode)
+        let contentWidth = Self.contentWidth(for: quotaState)
         let iconRect = NSRect(
             x: Self.leftPadding,
             y: (bounds.height - Self.iconSize) / 2,
@@ -447,8 +437,8 @@ private final class StatusBarCapsuleView: NSView {
         addSubview(lightsView)
     }
 
-    private static func contentWidth(for quotaState: StatusBarQuotaState, mode: QuotaDisplayMode) -> CGFloat {
-        if mode == .bars && quotaState.hasBars {
+    private static func contentWidth(for quotaState: StatusBarQuotaState) -> CGFloat {
+        if quotaState.hasBars {
             return StatusQuotaBarsView.preferredWidth
         }
         return measuredTextWidth(for: quotaState.text)
@@ -470,7 +460,8 @@ private final class StatusQuotaBarsView: NSView {
     private static let label = "7d"
     private static let itemGap: CGFloat = 4
     private static let trackWidth: CGFloat = 44
-    private static let trackHeight: CGFloat = 3.2
+    private static let trackHeight: CGFloat = 5.2
+    private static let trackCornerRadius: CGFloat = 1.8
     private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     private static let maximumLabelWidth = ceil(textSize(label, font: labelFont).width)
@@ -506,10 +497,7 @@ private final class StatusQuotaBarsView: NSView {
         setupFillLayers()
     }
 
-    func configure(
-        weeklyDisplayPercent: Double,
-        weeklyUsedPercent: Double
-    ) {
+    func configure(weeklyDisplayPercent: Double, weeklyUsedPercent: Double) {
         let nextWeeklyDisplay = Self.clamped(weeklyDisplayPercent)
         let nextWeeklyUsed = Self.clamped(weeklyUsedPercent)
         let displayChanged = self.weeklyDisplayPercent != nextWeeklyDisplay
@@ -537,14 +525,10 @@ private final class StatusQuotaBarsView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        drawRow(
-            label: Self.label,
-            displayPercent: weeklyDisplayPercent,
-            centerY: bounds.midY
-        )
+        drawRow(displayPercent: weeklyDisplayPercent, centerY: bounds.midY)
     }
 
-    private func drawRow(label: String, displayPercent: Double, centerY: CGFloat) {
+    private func drawRow(displayPercent: Double, centerY: CGFloat) {
         let labelAttributes: [NSAttributedString.Key: Any] = [
             .font: Self.labelFont,
             .foregroundColor: NSColor.white.withAlphaComponent(0.9)
@@ -554,9 +538,9 @@ private final class StatusQuotaBarsView: NSView {
             .font: Self.valueFont,
             .foregroundColor: NSColor.white.withAlphaComponent(0.98)
         ]
-        let rowLayout = layoutRow(label: label, value: value, centerY: centerY)
+        let rowLayout = layoutRow(label: Self.label, value: value, centerY: centerY)
 
-        (label as NSString).draw(in: rowLayout.labelRect, withAttributes: labelAttributes)
+        (Self.label as NSString).draw(in: rowLayout.labelRect, withAttributes: labelAttributes)
         drawPill(rowLayout.trackRect, color: NSColor.white.withAlphaComponent(0.18))
         (value as NSString).draw(in: rowLayout.valueRect, withAttributes: valueAttributes)
     }
@@ -574,7 +558,11 @@ private final class StatusQuotaBarsView: NSView {
 
     private func drawPill(_ rect: NSRect, color: NSColor) {
         color.setFill()
-        NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+        NSBezierPath(
+            roundedRect: rect,
+            xRadius: Self.trackCornerRadius,
+            yRadius: Self.trackCornerRadius
+        ).fill()
     }
 
     private func updateFillLayers(
@@ -649,8 +637,8 @@ private final class StatusQuotaBarsView: NSView {
         )
         return CGPath(
             roundedRect: fillRect,
-            cornerWidth: fillRect.height / 2,
-            cornerHeight: fillRect.height / 2,
+            cornerWidth: Self.trackCornerRadius,
+            cornerHeight: Self.trackCornerRadius,
             transform: nil
         )
     }

@@ -3,6 +3,13 @@ import AppKit
 import Combine
 import UniformTypeIdentifiers
 
+enum PopupSpacing {
+    static let compact: CGFloat = 4
+    static let regular: CGFloat = 8
+    static let section: CGFloat = 12
+    static let block: CGFloat = 16
+}
+
 struct MenuBarView: View {
     @EnvironmentObject var store: TokenStore
     @EnvironmentObject var oauth: OAuthManager
@@ -73,22 +80,6 @@ struct MenuBarView: View {
         availableCount > 0 ? CodexStatusPalette.ok : CodexStatusPalette.unavailable
     }
 
-    private var accountListHeight: CGFloat {
-        let headerHeight = CGFloat(groupedAccounts.count) * 18
-        let rowHeight = store.accounts.reduce(CGFloat.zero) { total, account in
-            total + estimatedAccountRowHeight(for: account)
-        }
-        return min(360, max(110, headerHeight + rowHeight + 16))
-    }
-
-    private func estimatedAccountRowHeight(for account: TokenAccount) -> CGFloat {
-        var height: CGFloat = 72
-        if shouldShowResetCreditsExpiration(for: account) {
-            height += 32
-        }
-        return height
-    }
-
     private func shouldShowResetCreditsExpiration(for account: TokenAccount) -> Bool {
         guard let count = account.rateLimitResetCreditsAvailableCount,
               count > 0,
@@ -116,7 +107,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 标题栏
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: PopupSpacing.compact) {
                     Text("CodexAppBar")
                         .font(.system(size: 13, weight: .semibold))
 
@@ -180,8 +171,8 @@ struct MenuBarView: View {
                 .help(refreshHelpText)
                 .disabled(isRefreshing)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, PopupSpacing.section)
+            .padding(.vertical, PopupSpacing.regular)
             .animation(.easeInOut(duration: 0.16), value: refreshStatusText)
 
             CodexResetWindowTipView()
@@ -228,7 +219,7 @@ struct MenuBarView: View {
             }
 
             if store.accounts.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: PopupSpacing.regular) {
                     Image(systemName: "person.crop.circle.badge.plus")
                         .font(.system(size: 32))
                         .foregroundColor(.secondary)
@@ -239,43 +230,39 @@ struct MenuBarView: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                .padding(.vertical, PopupSpacing.block)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(groupedAccounts, id: \.email) { group in
-                            VStack(alignment: .leading, spacing: 2) {
-                                // Email group header
+                VStack(alignment: .leading, spacing: PopupSpacing.section) {
+                    ForEach(groupedAccounts, id: \.email) { group in
+                        VStack(alignment: .leading, spacing: PopupSpacing.compact) {
+                            // Email group header
                                 Text(group.email)
                                     .font(.system(size: 11, weight: .medium))
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
-                                    .padding(.leading, 4)
 
                                 // Account rows
-                                ForEach(group.accounts) { account in
-                                    AccountRowView(
-                                        account: account,
-                                        isActive: account.isActive,
-                                        now: now,
-                                        isRefreshing: refreshingAccounts.contains(account.id)
-                                    ) {
-                                        activateAccount(account)
-                                    } onRefresh: {
-                                        Task { await refreshAccount(account) }
-                                    } onReauth: {
-                                        reauthAccount(account)
-                                    } onDelete: {
-                                        store.remove(account)
-                                    }
+                            ForEach(group.accounts) { account in
+                                AccountRowView(
+                                    account: account,
+                                    isActive: account.isActive,
+                                    now: now,
+                                    isRefreshing: refreshingAccounts.contains(account.id)
+                                ) {
+                                    activateAccount(account)
+                                } onRefresh: {
+                                    Task { await refreshAccount(account) }
+                                } onReauth: {
+                                    reauthAccount(account)
+                                } onDelete: {
+                                    store.remove(account)
                                 }
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
                 }
-                .frame(height: accountListHeight)
+                .padding(.horizontal, PopupSpacing.section)
+                .padding(.vertical, PopupSpacing.regular)
             }
 
             if let success = showSuccess {
@@ -287,8 +274,8 @@ struct MenuBarView: View {
                         .font(.caption)
                     Spacer()
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, PopupSpacing.section)
+                .padding(.vertical, PopupSpacing.regular)
             }
 
             if let error = showError {
@@ -308,8 +295,8 @@ struct MenuBarView: View {
                     .buttonStyle(.borderless)
                     .focusable(false)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, PopupSpacing.section)
+                .padding(.vertical, PopupSpacing.regular)
             }
 
             if !store.accounts.isEmpty {
@@ -321,7 +308,7 @@ struct MenuBarView: View {
 
             // 底部操作栏
             HStack(alignment: .center, spacing: 0) {
-                HStack(spacing: 8) {
+                HStack(spacing: PopupSpacing.regular) {
                     Button {
                         oauth.startOAuth { result in
                             switch result {
@@ -358,9 +345,9 @@ struct MenuBarView: View {
                     .help(L.importAccount)
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: PopupSpacing.regular)
 
-                HStack(spacing: 8) {
+                HStack(spacing: PopupSpacing.regular) {
                     Button {
                         refreshFrequency.cycle()
                         lastVisibleRefresh = .distantPast
@@ -393,19 +380,6 @@ struct MenuBarView: View {
                     .help(quotaDisplay.amountHelpText)
 
                     Button {
-                        quotaDisplay.toggle()
-                    } label: {
-                        Text(quotaDisplay.mode.shortLabel)
-                            .font(.system(size: 10, weight: .medium))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .frame(height: 18, alignment: .center)
-                    }
-                    .buttonStyle(.borderless)
-                    .focusable(false)
-                    .help(quotaDisplay.displayHelpText)
-
-                    Button {
                         quotaDisplay.toggleStatusLights()
                     } label: {
                         StatusLightsToggleIcon(isOn: quotaDisplay.showStatusLights)
@@ -416,16 +390,16 @@ struct MenuBarView: View {
                     .help(quotaDisplay.statusLightsHelpText)
 
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
+                .padding(.horizontal, PopupSpacing.regular)
+                .padding(.vertical, PopupSpacing.compact)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.primary.opacity(0.07))
                 )
 
-                Spacer(minLength: 8)
+                Spacer(minLength: PopupSpacing.regular)
 
-                HStack(spacing: 8) {
+                HStack(spacing: PopupSpacing.regular) {
                     Button {
                         language.cycle()
                     } label: {
@@ -449,8 +423,8 @@ struct MenuBarView: View {
                     .help(L.quit)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, PopupSpacing.section)
+            .padding(.vertical, PopupSpacing.regular)
         }
         .frame(width: 300)
         .onReceive(tickTimer) { tickDate in
@@ -714,6 +688,7 @@ struct MenuBarView: View {
 }
 
 private struct AppUpdateRow: View {
+    @EnvironmentObject private var language: LanguageSettings
     @ObservedObject var updater: AppUpdateService
 
     private var iconName: String {
@@ -795,13 +770,15 @@ private struct AppUpdateRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        let _ = language.identity
+
+        HStack(alignment: .top, spacing: PopupSpacing.regular) {
             Image(systemName: iconName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(iconColor)
                 .frame(width: 18, height: 18)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: PopupSpacing.compact) {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
@@ -821,14 +798,14 @@ private struct AppUpdateRow: View {
                 }
             }
 
-            Spacer(minLength: 6)
+            Spacer(minLength: PopupSpacing.regular)
 
             if showsPrimaryButton {
                 Button(action: primaryAction) {
                     Text(primaryButtonTitle)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(primaryButtonForeground)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, PopupSpacing.regular)
                         .frame(height: 20, alignment: .center)
                         .background(
                             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -843,8 +820,8 @@ private struct AppUpdateRow: View {
                 .focusable(false)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.horizontal, PopupSpacing.section)
+        .padding(.vertical, PopupSpacing.regular)
     }
 
     private var showsPrimaryButton: Bool {
@@ -930,13 +907,13 @@ private struct AppUpdateCompletedRow: View {
     let dismiss: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: PopupSpacing.regular) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(CodexStatusPalette.ok)
                 .frame(width: 18, height: 18)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: PopupSpacing.compact) {
                 Text(L.updateInstalledTitle(completion.tagName))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
@@ -949,7 +926,7 @@ private struct AppUpdateCompletedRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 6)
+            Spacer(minLength: PopupSpacing.regular)
 
             Button(action: dismiss) {
                 Image(systemName: "xmark")
@@ -961,8 +938,8 @@ private struct AppUpdateCompletedRow: View {
             .focusable(false)
             .help(L.dismissUpdateInstalled)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.horizontal, PopupSpacing.section)
+        .padding(.vertical, PopupSpacing.regular)
         .background(CodexStatusPalette.ok.opacity(0.08))
     }
 }
@@ -1006,13 +983,13 @@ private struct CodexHookSetupRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: PopupSpacing.regular) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.orange)
                 .frame(width: 18, height: 18)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: PopupSpacing.compact) {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
@@ -1024,7 +1001,7 @@ private struct CodexHookSetupRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 6)
+            Spacer(minLength: PopupSpacing.regular)
 
             Button(action: installAction) {
                 Text(buttonTitle)
@@ -1034,7 +1011,7 @@ private struct CodexHookSetupRow: View {
             .focusable(false)
             .foregroundColor(.accentColor)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.horizontal, PopupSpacing.section)
+        .padding(.vertical, PopupSpacing.regular)
     }
 }

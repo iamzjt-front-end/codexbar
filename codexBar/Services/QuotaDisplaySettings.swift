@@ -1,27 +1,6 @@
 import Combine
 import Foundation
 
-enum QuotaDisplayMode: String, CaseIterable, Identifiable {
-    case numbers
-    case bars
-
-    var id: String { rawValue }
-
-    var shortLabel: String {
-        switch self {
-        case .numbers: return L.quotaDisplayNumbersShort
-        case .bars: return L.quotaDisplayBarsShort
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .numbers: return L.quotaDisplayNumbers
-        case .bars: return L.quotaDisplayBars
-        }
-    }
-}
-
 enum QuotaAmountMode: String, CaseIterable, Identifiable {
     case used
     case remaining
@@ -56,24 +35,13 @@ enum QuotaAmountMode: String, CaseIterable, Identifiable {
 final class QuotaDisplaySettings: ObservableObject {
     static let shared = QuotaDisplaySettings()
 
-    @Published private(set) var mode: QuotaDisplayMode
     @Published private(set) var amountMode: QuotaAmountMode
     @Published private(set) var showStatusLights: Bool
 
-    private let modeDefaultsKey = "quotaDisplayMode"
     private let amountDefaultsKey = "quotaAmountMode"
     private let showStatusLightsDefaultsKey = "quotaShowStatusLights"
 
     private init() {
-        let initialMode: QuotaDisplayMode
-        if let saved = UserDefaults.standard.string(forKey: modeDefaultsKey),
-           let savedMode = QuotaDisplayMode(rawValue: saved) {
-            initialMode = savedMode
-        } else {
-            initialMode = .numbers
-            UserDefaults.standard.set(initialMode.rawValue, forKey: modeDefaultsKey)
-        }
-
         let initialAmountMode: QuotaAmountMode
         if let saved = UserDefaults.standard.string(forKey: amountDefaultsKey),
            let savedMode = QuotaAmountMode(rawValue: saved) {
@@ -83,7 +51,6 @@ final class QuotaDisplaySettings: ObservableObject {
             UserDefaults.standard.set(initialAmountMode.rawValue, forKey: amountDefaultsKey)
         }
 
-        mode = initialMode
         amountMode = initialAmountMode
 
         if UserDefaults.standard.object(forKey: showStatusLightsDefaultsKey) == nil {
@@ -94,26 +61,12 @@ final class QuotaDisplaySettings: ObservableObject {
         }
     }
 
-    var displayHelpText: String {
-        L.quotaDisplayModeHelp(mode.label)
-    }
-
     var amountHelpText: String {
         L.quotaAmountModeHelp(amountMode.label)
     }
 
     var statusLightsHelpText: String {
         L.statusLightsDisplayHelp(showStatusLights ? L.statusLightsVisible : L.statusLightsHidden)
-    }
-
-    func setMode(_ newMode: QuotaDisplayMode) {
-        guard mode != newMode else { return }
-        mode = newMode
-        UserDefaults.standard.set(newMode.rawValue, forKey: modeDefaultsKey)
-    }
-
-    func toggle() {
-        setMode(mode == .numbers ? .bars : .numbers)
     }
 
     func setAmountMode(_ newMode: QuotaAmountMode) {
