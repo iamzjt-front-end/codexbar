@@ -172,14 +172,32 @@ final class WhamService {
             async let resetCredits = self.fetchResetCreditsIfAvailable(snapshot: snapshot)
             let (result, name, credits) = try await (usageResult, orgName, resetCredits)
             let merged = result.merging(resetCredits: credits)
+            let checkedAt = now()
+            let liveSnapshot: CodexLiveQuotaSnapshot?
+            if snapshot.isActive, let weeklyResetAt = merged.weeklyResetAt {
+                liveSnapshot = await CodexLiveQuotaStore.shared.latestSnapshot(
+                    matchingResetAt: weeklyResetAt,
+                    planType: merged.planType,
+                    now: checkedAt
+                )
+            } else {
+                liveSnapshot = nil
+            }
+            let weeklyUsedPercent = CodexLiveQuotaResolver.resolvedUsedPercent(
+                whamUsedPercent: merged.weeklyUsedPercent,
+                whamResetAt: merged.weeklyResetAt,
+                whamPlanType: merged.planType,
+                liveSnapshot: liveSnapshot,
+                now: checkedAt
+            )
             let patch = AccountUsagePatch(
                 planType: merged.planType,
-                weeklyUsedPercent: merged.weeklyUsedPercent,
+                weeklyUsedPercent: weeklyUsedPercent,
                 weeklyResetAt: merged.weeklyResetAt,
                 resetCreditsAvailableCount: merged.rateLimitResetCreditsAvailableCount,
                 resetCreditsExpiresAt: merged.rateLimitResetCreditsExpiresAt,
                 organizationName: name,
-                checkedAt: now()
+                checkedAt: checkedAt
             )
             clearUnauthorizedConfirmations(for: snapshot.key)
             _ = store.applyUsagePatch(patch, to: snapshot.key, ifCurrent: snapshot.revision)
