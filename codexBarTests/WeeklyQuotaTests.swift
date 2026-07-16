@@ -59,6 +59,144 @@ final class WeeklyQuotaTests: XCTestCase {
         XCTAssertEqual(result.weeklyUsedPercent, 100)
     }
 
+    func testCodexLiveQuotaEventOverridesLaggingWhamValueForSameWindow() throws {
+        let line = Data(#"{"timestamp":"2026-07-16T16:20:51.266Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":21.0,"window_minutes":10080,"resets_at":1784788618},"plan_type":"prolite"}}}"#.utf8)
+        let snapshot = try XCTUnwrap(CodexLiveQuotaParser.snapshot(from: line))
+        let now = Date(timeIntervalSince1970: 1_784_220_000)
+
+        let resolved = CodexLiveQuotaResolver.resolvedUsedPercent(
+            whamUsedPercent: 9,
+            whamResetAt: Date(timeIntervalSince1970: 1_784_788_618),
+            whamPlanType: "prolite",
+            liveSnapshot: snapshot,
+            now: now
+        )
+
+        XCTAssertEqual(resolved, 21)
+    }
+
+    func testCodexLiveQuotaNeverRegressesNewerWhamValue() {
+        let now = Date(timeIntervalSince1970: 1_784_220_000)
+        let resetAt = Date(timeIntervalSince1970: 1_784_788_618)
+        let snapshot = CodexLiveQuotaSnapshot(
+            usedPercent: 21,
+            resetAt: resetAt,
+            observedAt: now,
+            planType: "prolite"
+        )
+
+        XCTAssertEqual(
+            CodexLiveQuotaResolver.resolvedUsedPercent(
+                whamUsedPercent: 25,
+                whamResetAt: resetAt,
+                whamPlanType: "prolite",
+                liveSnapshot: snapshot,
+                now: now
+            ),
+            25
+        )
+    }
+
+    func testCodexLiveQuotaRejectsDifferentResetWindowOrPlan() {
+        let now = Date(timeIntervalSince1970: 1_784_220_000)
+        let snapshot = CodexLiveQuotaSnapshot(
+            usedPercent: 21,
+            resetAt: Date(timeIntervalSince1970: 1_784_788_618),
+            observedAt: now,
+            planType: "prolite"
+        )
+
+        XCTAssertEqual(
+            CodexLiveQuotaResolver.resolvedUsedPercent(
+                whamUsedPercent: 9,
+                whamResetAt: Date(timeIntervalSince1970: 1_784_700_000),
+                whamPlanType: "prolite",
+                liveSnapshot: snapshot,
+                now: now
+            ),
+            9
+        )
+        XCTAssertEqual(
+            CodexLiveQuotaResolver.resolvedUsedPercent(
+                whamUsedPercent: 9,
+                whamResetAt: snapshot.resetAt,
+                whamPlanType: "team",
+                liveSnapshot: snapshot,
+                now: now
+            ),
+            9
+        )
+    }
+
+    func testCodexLiveQuotaStoreMatchesWindowAndIncrementallyCompletesPartialLine() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("codex-live-quota-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = Date(timeIntervalSince1970: 1_784_220_000)
+        let resetAt = Date(timeIntervalSince1970: 1_784_788_618)
+        let components = calendar.dateComponents([.year, .month, .day], from: now)
+        let directory = root
+            .appendingPathComponent(String(format: "%04d", try XCTUnwrap(components.year)), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", try XCTUnwrap(components.month)), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", try XCTUnwrap(components.day)), isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("rollout-test.jsonl")
+
+        let matchingLine = quotaEventLine(
+            timestamp: now.addingTimeInterval(-60),
+            usedPercent: 21,
+            resetAt: resetAt,
+            planType: "prolite"
+        )
+        let newerDifferentPlanLine = quotaEventLine(
+            timestamp: now.addingTimeInterval(-30),
+            usedPercent: 80,
+            resetAt: resetAt,
+            planType: "team"
+        )
+        try Data("\(matchingLine)\n\(newerDifferentPlanLine)\n".utf8).write(to: fileURL)
+
+        let store = CodexLiveQuotaStore(sessionsURL: root, calendar: calendar)
+        let matchingSnapshot = await store.latestSnapshot(
+            matchingResetAt: resetAt,
+            planType: "prolite",
+            now: now
+        )
+        XCTAssertEqual(matchingSnapshot?.usedPercent, 21)
+
+        let updatedLine = Data(quotaEventLine(
+            timestamp: now.addingTimeInterval(-10),
+            usedPercent: 23,
+            resetAt: resetAt,
+            planType: "prolite"
+        ).utf8)
+        let splitIndex = updatedLine.count / 2
+        let handle = try FileHandle(forWritingTo: fileURL)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: updatedLine.prefix(splitIndex))
+
+        let beforeCompletion = await store.latestSnapshot(
+            matchingResetAt: resetAt,
+            planType: "prolite",
+            now: now
+        )
+        XCTAssertEqual(beforeCompletion?.usedPercent, 21)
+
+        try handle.write(contentsOf: updatedLine.suffix(from: splitIndex))
+        try handle.write(contentsOf: Data("\n".utf8))
+        let afterCompletion = await store.latestSnapshot(
+            matchingResetAt: resetAt,
+            planType: "prolite",
+            now: now
+        )
+        XCTAssertEqual(afterCompletion?.usedPercent, 23)
+    }
+
     func testLegacyTokenPoolMigratesSecondaryWindowAndWritesWeeklyKeys() throws {
         let checkedAt = Date(timeIntervalSince1970: 1_700_000_000)
         let weeklyResetAt = checkedAt.addingTimeInterval(4 * 24 * 60 * 60)
@@ -109,6 +247,17 @@ final class WeeklyQuotaTests: XCTestCase {
             "limit_window_seconds": seconds,
             "reset_at": resetAt
         ]
+    }
+
+    private func quotaEventLine(
+        timestamp: Date,
+        usedPercent: Double,
+        resetAt: Date,
+        planType: String
+    ) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return #"{"timestamp":"\#(formatter.string(from: timestamp))","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":\#(usedPercent),"window_minutes":10080,"resets_at":\#(resetAt.timeIntervalSince1970)},"plan_type":"\#(planType)"}}}"#
     }
 
     private func decodeLegacyAccount(
