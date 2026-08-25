@@ -11,8 +11,52 @@ final class WeeklyQuotaTests: XCTestCase {
             ]
         ])
 
+        XCTAssertNil(result.fiveHourUsedPercent)
+        XCTAssertNil(result.fiveHourResetAt)
         XCTAssertEqual(result.weeklyUsedPercent, 23)
         XCTAssertEqual(result.weeklyResetAt?.timeIntervalSince1970, 1_800_000_000)
+    }
+
+    func testPlusDualWindowResponseRestoresFiveHourAndWeeklyQuota() throws {
+        let result = try WhamService.shared.parseUsage([
+            "plan_type": "plus",
+            "rate_limit": [
+                "primary_window": window(used: 61, seconds: 18_000, resetAt: 1_700_000_000),
+                "secondary_window": window(used: 42, seconds: 604_800, resetAt: 1_800_000_000)
+            ]
+        ])
+
+        XCTAssertEqual(result.fiveHourUsedPercent, 61)
+        XCTAssertEqual(result.fiveHourResetAt?.timeIntervalSince1970, 1_700_000_000)
+        XCTAssertEqual(result.weeklyUsedPercent, 42)
+        XCTAssertEqual(result.weeklyResetAt?.timeIntervalSince1970, 1_800_000_000)
+    }
+
+    func testWindowPositionDoesNotDefinePlusQuotaSemantics() throws {
+        let result = try WhamService.shared.parseUsage([
+            "plan_type": "plus",
+            "rate_limit": [
+                "primary_window": window(used: 17, seconds: 604_800, resetAt: 1_800_000_000),
+                "secondary_window": window(used: 88, seconds: 18_000, resetAt: 1_700_000_000)
+            ]
+        ])
+
+        XCTAssertEqual(result.fiveHourUsedPercent, 88)
+        XCTAssertEqual(result.weeklyUsedPercent, 17)
+    }
+
+    func testProIgnoresFiveHourWindowAndKeepsWeeklyOnly() throws {
+        let result = try WhamService.shared.parseUsage([
+            "plan_type": "pro",
+            "rate_limit": [
+                "primary_window": window(used: 91, seconds: 18_000, resetAt: 1_700_000_000),
+                "secondary_window": window(used: 37, seconds: 604_800, resetAt: 1_800_000_000)
+            ]
+        ])
+
+        XCTAssertNil(result.fiveHourUsedPercent)
+        XCTAssertNil(result.fiveHourResetAt)
+        XCTAssertEqual(result.weeklyUsedPercent, 37)
     }
 
     func testLegacyDualWindowResponseUsesSecondaryAsWeekly() throws {
@@ -23,6 +67,7 @@ final class WeeklyQuotaTests: XCTestCase {
             ]
         ])
 
+        XCTAssertNil(result.fiveHourUsedPercent)
         XCTAssertEqual(result.weeklyUsedPercent, 42)
         XCTAssertEqual(result.weeklyResetAt?.timeIntervalSince1970, 1_800_000_000)
     }
@@ -51,11 +96,14 @@ final class WeeklyQuotaTests: XCTestCase {
 
     func testUsedPercentIsClamped() throws {
         let result = try WhamService.shared.parseUsage([
+            "plan_type": "plus",
             "rate_limit": [
-                "primary_window": window(used: 150, seconds: 604_800, resetAt: 1_800_000_000)
+                "primary_window": window(used: -10, seconds: 18_000, resetAt: 1_700_000_000),
+                "secondary_window": window(used: 150, seconds: 604_800, resetAt: 1_800_000_000)
             ]
         ])
 
+        XCTAssertEqual(result.fiveHourUsedPercent, 0)
         XCTAssertEqual(result.weeklyUsedPercent, 100)
     }
 
@@ -73,6 +121,33 @@ final class WeeklyQuotaTests: XCTestCase {
         )
 
         XCTAssertEqual(resolved, 21)
+    }
+
+    func testCodexLiveQuotaParserReadsBothPlusWindowsAndKeepsWeeklyCompatibility() throws {
+        let observedAt = Date(timeIntervalSince1970: 1_784_220_000)
+        let fiveHourResetAt = Date(timeIntervalSince1970: 1_784_230_000)
+        let weeklyResetAt = Date(timeIntervalSince1970: 1_784_788_618)
+        let line = Data(dualQuotaEventLine(
+            timestamp: observedAt,
+            fiveHourUsedPercent: 64,
+            fiveHourResetAt: fiveHourResetAt,
+            weeklyUsedPercent: 22,
+            weeklyResetAt: weeklyResetAt,
+            planType: "plus"
+        ).utf8)
+
+        let snapshots = CodexLiveQuotaParser.snapshots(from: line)
+        XCTAssertEqual(snapshots.count, 2)
+        XCTAssertTrue(snapshots.contains(where: {
+            $0.usedPercent == 64 && $0.resetAt == fiveHourResetAt
+        }))
+        XCTAssertTrue(snapshots.contains(where: {
+            $0.usedPercent == 22 && $0.resetAt == weeklyResetAt
+        }))
+
+        let weeklySnapshot = try XCTUnwrap(CodexLiveQuotaParser.snapshot(from: line))
+        XCTAssertEqual(weeklySnapshot.usedPercent, 22)
+        XCTAssertEqual(weeklySnapshot.resetAt, weeklyResetAt)
     }
 
     func testCodexLiveQuotaNeverRegressesNewerWhamValue() {
@@ -215,6 +290,34 @@ final class WeeklyQuotaTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         XCTAssertEqual(json["weekly_used_percent"] as? Double, 36)
         XCTAssertNotNil(json["weekly_reset_at"])
+        XCTAssertNil(json["five_hour_used_percent"])
+        XCTAssertNil(json["primary_used_percent"])
+        XCTAssertNil(json["secondary_used_percent"])
+    }
+
+    func testLegacyPlusPoolRestoresFiveHourWindowAndWritesCanonicalKeys() throws {
+        let checkedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let fiveHourResetAt = checkedAt.addingTimeInterval(2 * 60 * 60)
+        let weeklyResetAt = checkedAt.addingTimeInterval(4 * 24 * 60 * 60)
+        let account = try decodeLegacyAccount(
+            planType: "plus",
+            primaryUsed: 75,
+            secondaryUsed: 36,
+            primaryResetAt: fiveHourResetAt,
+            secondaryResetAt: weeklyResetAt,
+            checkedAt: checkedAt
+        )
+
+        XCTAssertTrue(account.hasFiveHourQuota)
+        XCTAssertEqual(account.fiveHourUsedPercent, 75)
+        XCTAssertEqual(account.fiveHourResetAt, fiveHourResetAt)
+        XCTAssertEqual(account.weeklyUsedPercent, 36)
+
+        let encoded = try makeEncoder().encode(account)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(json["five_hour_used_percent"] as? Double, 75)
+        XCTAssertNotNil(json["five_hour_reset_at"])
+        XCTAssertEqual(json["weekly_used_percent"] as? Double, 36)
         XCTAssertNil(json["primary_used_percent"])
         XCTAssertNil(json["secondary_used_percent"])
     }
@@ -234,11 +337,26 @@ final class WeeklyQuotaTests: XCTestCase {
         XCTAssertEqual(account.weeklyResetAt, weeklyResetAt)
     }
 
-    func testUsageStatusUsesOnlyWeeklyQuota() {
+    func testUsageStatusUsesPlanAwareQuotaWindows() {
         XCTAssertEqual(TokenAccount(weeklyUsedPercent: 79.9).usageStatus, .ok)
         XCTAssertEqual(TokenAccount(weeklyUsedPercent: 80).usageStatus, .warning)
         XCTAssertEqual(TokenAccount(weeklyUsedPercent: 100).usageStatus, .exceeded)
         XCTAssertTrue(TokenAccount(weeklyUsedPercent: 100).weeklyExhausted)
+
+        let plusWarning = TokenAccount(planType: "plus", fiveHourUsedPercent: 80, weeklyUsedPercent: 10)
+        XCTAssertTrue(plusWarning.hasFiveHourQuota)
+        XCTAssertEqual(plusWarning.usageStatus, .warning)
+
+        let plusExhausted = TokenAccount(planType: "plus", fiveHourUsedPercent: 100, weeklyUsedPercent: 10)
+        XCTAssertTrue(plusExhausted.fiveHourExhausted)
+        XCTAssertTrue(plusExhausted.quotaExhausted)
+        XCTAssertEqual(plusExhausted.usageStatus, .exceeded)
+
+        let pro = TokenAccount(planType: "pro", fiveHourUsedPercent: 100, weeklyUsedPercent: 10)
+        XCTAssertFalse(pro.hasFiveHourQuota)
+        XCTAssertNil(pro.fiveHourUsedPercent)
+        XCTAssertFalse(pro.quotaExhausted)
+        XCTAssertEqual(pro.usageStatus, .ok)
     }
 
     private func window(used: Double, seconds: Int, resetAt: TimeInterval) -> [String: Any] {
@@ -260,7 +378,21 @@ final class WeeklyQuotaTests: XCTestCase {
         return #"{"timestamp":"\#(formatter.string(from: timestamp))","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":\#(usedPercent),"window_minutes":10080,"resets_at":\#(resetAt.timeIntervalSince1970)},"plan_type":"\#(planType)"}}}"#
     }
 
+    private func dualQuotaEventLine(
+        timestamp: Date,
+        fiveHourUsedPercent: Double,
+        fiveHourResetAt: Date,
+        weeklyUsedPercent: Double,
+        weeklyResetAt: Date,
+        planType: String
+    ) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return #"{"timestamp":"\#(formatter.string(from: timestamp))","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":\#(fiveHourUsedPercent),"window_minutes":300,"resets_at":\#(fiveHourResetAt.timeIntervalSince1970)},"secondary":{"used_percent":\#(weeklyUsedPercent),"window_minutes":10080,"resets_at":\#(weeklyResetAt.timeIntervalSince1970)},"plan_type":"\#(planType)"}}}"#
+    }
+
     private func decodeLegacyAccount(
+        planType: String = "pro",
         primaryUsed: Double,
         secondaryUsed: Double,
         primaryResetAt: Date?,
@@ -274,7 +406,7 @@ final class WeeklyQuotaTests: XCTestCase {
             "access_token": "access",
             "refresh_token": "refresh",
             "id_token": "id",
-            "plan_type": "pro",
+            "plan_type": planType,
             "primary_used_percent": primaryUsed,
             "secondary_used_percent": secondaryUsed,
             "last_checked": iso8601(checkedAt),

@@ -9,6 +9,48 @@ final class AccountRefreshRaceTests: XCTestCase {
     private let resetCreditsPath = "/backend-api/wham/rate-limit-reset-credits"
     private let refreshPath = "/oauth/token"
 
+    func testPlusWhamRefreshPersistsFiveHourAndWeeklyWindows() async throws {
+        let fixture = try AccountStoreFixture()
+        defer { fixture.remove() }
+        let key = try fixture.store.commitOAuthAccount(account(planType: "plus"))
+        let client = ControlledHTTPDataClient()
+        configureOptionalWhamResponses(client)
+        client.respond(path: usagePath, status: 200, data: plusUsageData(fiveHour: 63, weekly: 27))
+        let service = WhamService(httpClient: client)
+
+        await service.refreshOne(key: key, store: fixture.store)
+
+        let current = try XCTUnwrap(fixture.store.account(for: key))
+        XCTAssertEqual(current.planType, "plus")
+        XCTAssertTrue(current.hasFiveHourQuota)
+        XCTAssertEqual(current.fiveHourUsedPercent, 63)
+        XCTAssertNotNil(current.fiveHourResetAt)
+        XCTAssertEqual(current.weeklyUsedPercent, 27)
+        XCTAssertNotNil(current.weeklyResetAt)
+    }
+
+    func testProWhamRefreshClearsPreviouslyPersistedFiveHourWindow() async throws {
+        let fixture = try AccountStoreFixture()
+        defer { fixture.remove() }
+        var initial = account(planType: "plus")
+        initial.fiveHourUsedPercent = 88
+        initial.fiveHourResetAt = Date().addingTimeInterval(3_600)
+        let key = try fixture.store.upsertImportedAccount(initial)
+        let client = ControlledHTTPDataClient()
+        configureOptionalWhamResponses(client)
+        client.respond(path: usagePath, status: 200, data: usageData(percent: 31))
+        let service = WhamService(httpClient: client)
+
+        await service.refreshOne(key: key, store: fixture.store)
+
+        let current = try XCTUnwrap(fixture.store.account(for: key))
+        XCTAssertEqual(current.planType, "pro")
+        XCTAssertNil(current.fiveHourUsedPercent)
+        XCTAssertNil(current.fiveHourResetAt)
+        XCTAssertFalse(current.hasFiveHourQuota)
+        XCTAssertEqual(current.weeklyUsedPercent, 31)
+    }
+
     func testLateWhamUnauthorizedCannotExpireReauthorizedCredentials() async throws {
         let fixture = try AccountStoreFixture()
         defer { fixture.remove() }
@@ -795,7 +837,8 @@ final class AccountRefreshRaceTests: XCTestCase {
     private func account(
         access: String = "access-old",
         refresh: String = "refresh-old",
-        id: String = "id-old"
+        id: String = "id-old",
+        planType: String = "pro"
     ) -> TokenAccount {
         TokenAccount(
             email: "person@example.com",
@@ -805,7 +848,7 @@ final class AccountRefreshRaceTests: XCTestCase {
             refreshToken: refresh,
             idToken: id,
             expiresAt: Date().addingTimeInterval(60),
-            planType: "pro"
+            planType: planType
         )
     }
 
@@ -819,6 +862,24 @@ final class AccountRefreshRaceTests: XCTestCase {
                     "reset_at": Date().addingTimeInterval(3_600).timeIntervalSince1970,
                 ]
             ]
+        ])
+    }
+
+    private func plusUsageData(fiveHour: Double, weekly: Double) -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            "plan_type": "plus",
+            "rate_limit": [
+                "primary_window": [
+                    "used_percent": fiveHour,
+                    "limit_window_seconds": 18_000,
+                    "reset_at": Date().addingTimeInterval(3_600).timeIntervalSince1970,
+                ],
+                "secondary_window": [
+                    "used_percent": weekly,
+                    "limit_window_seconds": 604_800,
+                    "reset_at": Date().addingTimeInterval(6 * 24 * 3_600).timeIntervalSince1970,
+                ],
+            ],
         ])
     }
 
