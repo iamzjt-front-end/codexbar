@@ -59,8 +59,8 @@ CodexAppBar is a macOS menu bar companion for Codex users. It brings account man
 | Area | What it does |
 | --- | --- |
 | Account management | Add ChatGPT/Codex accounts through OAuth, import exported account JSON, and group Team / Workspace accounts by organization. |
-| Quota monitoring | Show the Codex 7-day quota and reset time, with used / remaining display modes. |
-| Menu bar status | Keep the 7-day quota visible in the macOS menu bar with number mode, progress mode, and account-health colors. |
+| Quota monitoring | Show both 5-hour and 7-day quotas for Plus, and only the 7-day quota for Pro, including reset times and used / remaining display modes. |
+| Menu bar status | Keep plan-aware single or dual quota bars visible in the macOS menu bar, with account-health colors. |
 | Codex session lights | Install Codex hooks to show whether Codex is ready, running, waiting for permission, offline, or stale. |
 | Model quality | Display CodexRadar Model IQ, pass count, and comparison entries from [codexradar.com](https://codexradar.com/). |
 | Banked resets | Show banked Codex rate-limit reset count and fetch reset-credit expiration from the official endpoint. |
