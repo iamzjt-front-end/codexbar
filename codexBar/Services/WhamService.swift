@@ -190,8 +190,32 @@ final class WhamService {
                 liveSnapshot: liveSnapshot,
                 now: checkedAt
             )
+            let fiveHourUsedPercent: Double?
+            if let whamFiveHourUsedPercent = merged.fiveHourUsedPercent {
+                let fiveHourLiveSnapshot: CodexLiveQuotaSnapshot?
+                if snapshot.isActive, let fiveHourResetAt = merged.fiveHourResetAt {
+                    fiveHourLiveSnapshot = await CodexLiveQuotaStore.shared.latestSnapshot(
+                        matchingResetAt: fiveHourResetAt,
+                        planType: merged.planType,
+                        now: checkedAt
+                    )
+                } else {
+                    fiveHourLiveSnapshot = nil
+                }
+                fiveHourUsedPercent = CodexLiveQuotaResolver.resolvedUsedPercent(
+                    whamUsedPercent: whamFiveHourUsedPercent,
+                    whamResetAt: merged.fiveHourResetAt,
+                    whamPlanType: merged.planType,
+                    liveSnapshot: fiveHourLiveSnapshot,
+                    now: checkedAt
+                )
+            } else {
+                fiveHourUsedPercent = nil
+            }
             let patch = AccountUsagePatch(
                 planType: merged.planType,
+                fiveHourUsedPercent: fiveHourUsedPercent,
+                fiveHourResetAt: merged.fiveHourResetAt,
                 weeklyUsedPercent: weeklyUsedPercent,
                 weeklyResetAt: merged.weeklyResetAt,
                 resetCreditsAvailableCount: merged.rateLimitResetCreditsAvailableCount,
@@ -381,10 +405,11 @@ final class WhamService {
         var rateLimitResetCreditsAvailableCount: Int?
         var rateLimitResetCreditsExpiresAt: Date?
 
-        guard let rateLimit = json["rate_limit"] as? [String: Any],
-              let weeklyWindow = try Self.weeklyWindow(from: rateLimit) else {
+        guard let rateLimit = json["rate_limit"] as? [String: Any] else {
             throw WhamError.parseError
         }
+        let windows = try Self.quotaWindows(from: rateLimit, planType: planType)
+        guard let weeklyWindow = windows.weekly else { throw WhamError.parseError }
 
         if let resetCredits = json["rate_limit_reset_credits"] as? [String: Any] {
             rateLimitResetCreditsAvailableCount = Self.intValue(resetCredits["available_count"])
@@ -393,6 +418,8 @@ final class WhamService {
 
         return WhamUsageResult(
             planType: planType,
+            fiveHourUsedPercent: windows.fiveHour?.usedPercent,
+            fiveHourResetAt: windows.fiveHour?.resetAt,
             weeklyUsedPercent: weeklyWindow.usedPercent,
             weeklyResetAt: weeklyWindow.resetAt,
             rateLimitResetCreditsAvailableCount: rateLimitResetCreditsAvailableCount,
@@ -400,21 +427,35 @@ final class WhamService {
         )
     }
 
-    private static func weeklyWindow(from rateLimit: [String: Any]) throws -> RateLimitWindow? {
+    private static func quotaWindows(
+        from rateLimit: [String: Any],
+        planType: String
+    ) throws -> RateLimitWindows {
         let primary = try rateLimitWindow(from: rateLimit["primary_window"])
         let secondary = try rateLimitWindow(from: rateLimit["secondary_window"])
         let candidates = [primary, secondary].compactMap { $0 }
 
-        if let exactWeekly = candidates.first(where: { $0.limitWindowSeconds == RateLimitWindow.weeklySeconds }) {
-            return exactWeekly
+        if let exactWeekly = candidates.first(where: {
+            $0.limitWindowSeconds == RateLimitWindow.weeklySeconds
+        }) {
+            let fiveHour = CodexQuotaPlan.supportsFiveHourQuota(planType)
+                ? candidates.first(where: {
+                    $0.limitWindowSeconds == RateLimitWindow.fiveHourSeconds
+                })
+                : nil
+            return RateLimitWindows(fiveHour: fiveHour, weekly: exactWeekly)
         }
 
         // 兼容旧响应未携带 limit_window_seconds 的情况：旧双窗口的 secondary 是周额度；
         // 单窗口响应则只能使用唯一窗口。只要服务端提供了其他明确时长，就拒绝猜测。
         guard candidates.allSatisfy({ $0.limitWindowSeconds == nil }) else {
-            return nil
+            return RateLimitWindows(fiveHour: nil, weekly: nil)
         }
-        return secondary ?? (candidates.count == 1 ? primary : nil)
+        let weekly = secondary ?? (candidates.count == 1 ? primary : nil)
+        let fiveHour = CodexQuotaPlan.supportsFiveHourQuota(planType) && secondary != nil
+            ? primary
+            : nil
+        return RateLimitWindows(fiveHour: fiveHour, weekly: weekly)
     }
 
     private static func rateLimitWindow(from value: Any?) throws -> RateLimitWindow? {
@@ -605,6 +646,8 @@ final class WhamService {
 
 struct WhamUsageResult {
     let planType: String
+    let fiveHourUsedPercent: Double?
+    let fiveHourResetAt: Date?
     let weeklyUsedPercent: Double
     let weeklyResetAt: Date?
     let rateLimitResetCreditsAvailableCount: Int?
@@ -614,6 +657,8 @@ struct WhamUsageResult {
         guard let resetCredits else { return self }
         return WhamUsageResult(
             planType: planType,
+            fiveHourUsedPercent: fiveHourUsedPercent,
+            fiveHourResetAt: fiveHourResetAt,
             weeklyUsedPercent: weeklyUsedPercent,
             weeklyResetAt: weeklyResetAt,
             rateLimitResetCreditsAvailableCount: resetCredits.availableCount ?? rateLimitResetCreditsAvailableCount,
@@ -622,7 +667,13 @@ struct WhamUsageResult {
     }
 }
 
+private struct RateLimitWindows {
+    let fiveHour: RateLimitWindow?
+    let weekly: RateLimitWindow?
+}
+
 private struct RateLimitWindow {
+    static let fiveHourSeconds = 5 * 60 * 60
     static let weeklySeconds = 7 * 24 * 60 * 60
 
     let usedPercent: Double

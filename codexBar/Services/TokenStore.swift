@@ -40,6 +40,8 @@ struct AccountCredentials: Sendable {
 
 struct AccountUsagePatch: Sendable {
     let planType: String
+    let fiveHourUsedPercent: Double?
+    let fiveHourResetAt: Date?
     let weeklyUsedPercent: Double
     let weeklyResetAt: Date?
     let resetCreditsAvailableCount: Int?
@@ -326,6 +328,15 @@ final class TokenStore: ObservableObject {
         current.authorizationInvalidConfirmed = false
         current.isSuspended = false
         current.planType = patch.planType
+        if CodexQuotaPlan.supportsFiveHourQuota(patch.planType),
+           let fiveHourUsedPercent = patch.fiveHourUsedPercent {
+            current.fiveHourUsedPercent = fiveHourUsedPercent
+            current.fiveHourResetAt = patch.fiveHourResetAt
+                ?? futureDate(current.fiveHourResetAt, relativeTo: patch.checkedAt)
+        } else {
+            current.fiveHourUsedPercent = nil
+            current.fiveHourResetAt = nil
+        }
         current.weeklyUsedPercent = patch.weeklyUsedPercent
         current.weeklyResetAt = patch.weeklyResetAt
             ?? futureDate(current.weeklyResetAt, relativeTo: patch.checkedAt)

@@ -8,9 +8,20 @@ struct CodexLiveQuotaSnapshot: Equatable, Sendable {
 }
 
 enum CodexLiveQuotaParser {
+    nonisolated private static var fiveHourWindowMinutes: Int { 5 * 60 }
     nonisolated private static var weeklyWindowMinutes: Int { 7 * 24 * 60 }
 
     nonisolated static func snapshot(from line: Data) -> CodexLiveQuotaSnapshot? {
+        parsedSnapshots(from: line)
+            .first(where: { $0.windowMinutes == weeklyWindowMinutes })?
+            .snapshot
+    }
+
+    nonisolated static func snapshots(from line: Data) -> [CodexLiveQuotaSnapshot] {
+        parsedSnapshots(from: line).map(\.snapshot)
+    }
+
+    nonisolated private static func parsedSnapshots(from line: Data) -> [ParsedSnapshot] {
         guard let root = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               root["type"] as? String == "event_msg",
               let timestamp = root["timestamp"] as? String,
@@ -18,21 +29,35 @@ enum CodexLiveQuotaParser {
               let payload = root["payload"] as? [String: Any],
               payload["type"] as? String == "token_count",
               let rateLimits = payload["rate_limits"] as? [String: Any],
-              rateLimits["limit_id"] as? String == "codex",
-              let primary = rateLimits["primary"] as? [String: Any],
-              intValue(primary["window_minutes"]) == weeklyWindowMinutes,
-              let usedPercent = doubleValue(primary["used_percent"]),
-              usedPercent.isFinite,
-              let resetsAt = doubleValue(primary["resets_at"]) else {
-            return nil
+              rateLimits["limit_id"] as? String == "codex" else {
+            return []
         }
 
-        return CodexLiveQuotaSnapshot(
-            usedPercent: min(max(usedPercent, 0), 100),
-            resetAt: Date(timeIntervalSince1970: resetsAt),
-            observedAt: observedAt,
-            planType: rateLimits["plan_type"] as? String
-        )
+        let planType = rateLimits["plan_type"] as? String
+        return ["primary", "secondary"].compactMap { key in
+            guard let window = rateLimits[key] as? [String: Any],
+                  let windowMinutes = intValue(window["window_minutes"]),
+                  windowMinutes == fiveHourWindowMinutes || windowMinutes == weeklyWindowMinutes,
+                  let usedPercent = doubleValue(window["used_percent"]),
+                  usedPercent.isFinite,
+                  let resetsAt = doubleValue(window["resets_at"]) else {
+                return nil
+            }
+            return ParsedSnapshot(
+                windowMinutes: windowMinutes,
+                snapshot: CodexLiveQuotaSnapshot(
+                    usedPercent: min(max(usedPercent, 0), 100),
+                    resetAt: Date(timeIntervalSince1970: resetsAt),
+                    observedAt: observedAt,
+                    planType: planType
+                )
+            )
+        }
+    }
+
+    private struct ParsedSnapshot {
+        let windowMinutes: Int
+        let snapshot: CodexLiveQuotaSnapshot
     }
 
     nonisolated private static func iso8601Date(_ value: String) -> Date? {
@@ -196,8 +221,9 @@ actor CodexLiveQuotaStore {
         }
 
         for line in lines {
-            guard let snapshot = CodexLiveQuotaParser.snapshot(from: line) else { continue }
-            store(snapshot)
+            for snapshot in CodexLiveQuotaParser.snapshots(from: line) {
+                store(snapshot)
+            }
         }
         cursors[url] = FileCursor(offset: fileSize, trailingData: trailingData)
     }
