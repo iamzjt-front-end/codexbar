@@ -213,8 +213,21 @@ private final class AppStatusBarController: NSObject {
             return StatusBarQuotaState.empty
         }
         let weeklyDisplayPercent = amountMode.displayPercent(forUsedPercent: active.weeklyUsedPercent)
+        let fiveHourDisplayPercent = active.hasFiveHourQuota
+            ? active.fiveHourUsedPercent.map {
+                amountMode.displayPercent(forUsedPercent: $0)
+            }
+            : nil
+        let text: String
+        if let fiveHourDisplayPercent {
+            text = "5h \(Int(fiveHourDisplayPercent))% · 7d \(Int(weeklyDisplayPercent))%"
+        } else {
+            text = "7d \(Int(weeklyDisplayPercent))%"
+        }
         return StatusBarQuotaState(
-            text: "7d \(Int(weeklyDisplayPercent))%",
+            text: text,
+            fiveHourDisplayPercent: fiveHourDisplayPercent,
+            fiveHourUsedPercent: active.hasFiveHourQuota ? active.fiveHourUsedPercent : nil,
             weeklyDisplayPercent: weeklyDisplayPercent,
             weeklyUsedPercent: active.weeklyUsedPercent
         )
@@ -233,7 +246,11 @@ private final class AppStatusBarController: NSObject {
         if ref.contains(where: { $0.weeklyExhausted }) {
             return "exclamationmark.triangle.fill"
         }
-        if ref.contains(where: { $0.weeklyUsedPercent >= 80 }) {
+        if ref.contains(where: {
+            $0.fiveHourExhausted ||
+                ($0.hasFiveHourQuota && ($0.fiveHourUsedPercent ?? 0) >= 80) ||
+                $0.weeklyUsedPercent >= 80
+        }) {
             return "bolt.circle.fill"
         }
         return "terminal.fill"
@@ -255,17 +272,25 @@ private final class AppStatusBarController: NSObject {
 
 private struct StatusBarQuotaState {
     let text: String
+    let fiveHourDisplayPercent: Double?
+    let fiveHourUsedPercent: Double?
     let weeklyDisplayPercent: Double?
     let weeklyUsedPercent: Double?
 
     static let empty = StatusBarQuotaState(
         text: "7d --",
+        fiveHourDisplayPercent: nil,
+        fiveHourUsedPercent: nil,
         weeklyDisplayPercent: nil,
         weeklyUsedPercent: nil
     )
 
     var hasBars: Bool {
         weeklyDisplayPercent != nil
+    }
+
+    var showsFiveHourQuota: Bool {
+        fiveHourDisplayPercent != nil && fiveHourUsedPercent != nil
     }
 }
 
@@ -353,6 +378,8 @@ private final class StatusBarCapsuleView: NSView {
             textField.stringValue = quotaState.text
         }
         barsView.configure(
+            fiveHourDisplayPercent: quotaState.fiveHourDisplayPercent,
+            fiveHourUsedPercent: quotaState.fiveHourUsedPercent,
             weeklyDisplayPercent: quotaState.weeklyDisplayPercent ?? 0,
             weeklyUsedPercent: quotaState.weeklyUsedPercent ?? 0
         )
@@ -457,21 +484,46 @@ private final class StatusBarCapsuleView: NSView {
 }
 
 private final class StatusQuotaBarsView: NSView {
-    private static let label = "7d"
-    private static let itemGap: CGFloat = 4
-    private static let trackWidth: CGFloat = 44
-    private static let trackHeight: CGFloat = 5.2
-    private static let trackCornerRadius: CGFloat = 1.8
-    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-    private static let maximumLabelWidth = ceil(textSize(label, font: labelFont).width)
-    private static let maximumValueWidth = ceil(textSize("100%", font: valueFont).width)
+    private struct Metrics {
+        let itemGap: CGFloat
+        let trackWidth: CGFloat
+        let trackHeight: CGFloat
+        let labelFont: NSFont
+        let valueFont: NSFont
+        let rowCenterGap: CGFloat
+        let labelAlpha: CGFloat
+        let valueAlpha: CGFloat
+    }
+
+    private static let singleMetrics = Metrics(
+        itemGap: 4,
+        trackWidth: 44,
+        trackHeight: 5.2,
+        labelFont: .monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+        valueFont: .monospacedDigitSystemFont(ofSize: 11, weight: .regular),
+        rowCenterGap: 0,
+        labelAlpha: 0.9,
+        valueAlpha: 0.98
+    )
+    private static let dualMetrics = Metrics(
+        itemGap: 3,
+        trackWidth: 44,
+        trackHeight: 3.2,
+        labelFont: .monospacedDigitSystemFont(ofSize: 7.5, weight: .medium),
+        valueFont: .monospacedDigitSystemFont(ofSize: 8, weight: .semibold),
+        rowCenterGap: 8.2,
+        labelAlpha: 0.76,
+        valueAlpha: 0.92
+    )
     private static let labelTextYOffset: CGFloat = -0.2
     private static let valueTextYOffset: CGFloat = -0.2
     private static let fillAnimationKey = "codexbar.quotaFill"
     private static let fillAnimationDuration: CFTimeInterval = 0.38
 
-    static let preferredWidth = maximumLabelWidth + itemGap + trackWidth + itemGap + maximumValueWidth
+    static let preferredWidth = max(
+        rowWidth(label: "7d", metrics: singleMetrics),
+        rowWidth(label: "5h", metrics: dualMetrics)
+    )
 
     private struct RowLayout {
         let labelRect: NSRect
@@ -479,7 +531,10 @@ private final class StatusQuotaBarsView: NSView {
         let valueRect: NSRect
     }
 
+    private let fiveHourFillLayer = CAShapeLayer()
     private let weeklyFillLayer = CAShapeLayer()
+    private var fiveHourDisplayPercent: Double?
+    private var fiveHourUsedPercent: Double?
     private var weeklyDisplayPercent: Double = 0
     private var weeklyUsedPercent: Double = 0
     private var hasLaidOutFillLayers = false
@@ -497,17 +552,37 @@ private final class StatusQuotaBarsView: NSView {
         setupFillLayers()
     }
 
-    func configure(weeklyDisplayPercent: Double, weeklyUsedPercent: Double) {
+    func configure(
+        fiveHourDisplayPercent: Double?,
+        fiveHourUsedPercent: Double?,
+        weeklyDisplayPercent: Double,
+        weeklyUsedPercent: Double
+    ) {
+        let nextFiveHourDisplay = fiveHourDisplayPercent.map(Self.clamped)
+        let nextFiveHourUsed = fiveHourUsedPercent.map(Self.clamped)
+        let normalizedFiveHourDisplay = nextFiveHourDisplay != nil && nextFiveHourUsed != nil
+            ? nextFiveHourDisplay
+            : nil
+        let normalizedFiveHourUsed = nextFiveHourDisplay != nil && nextFiveHourUsed != nil
+            ? nextFiveHourUsed
+            : nil
         let nextWeeklyDisplay = Self.clamped(weeklyDisplayPercent)
         let nextWeeklyUsed = Self.clamped(weeklyUsedPercent)
-        let displayChanged = self.weeklyDisplayPercent != nextWeeklyDisplay
-        guard self.weeklyDisplayPercent != nextWeeklyDisplay ||
+        let displayChanged = self.fiveHourDisplayPercent != normalizedFiveHourDisplay ||
+            self.weeklyDisplayPercent != nextWeeklyDisplay
+        guard self.fiveHourDisplayPercent != normalizedFiveHourDisplay ||
+            self.fiveHourUsedPercent != normalizedFiveHourUsed ||
+            self.weeklyDisplayPercent != nextWeeklyDisplay ||
             self.weeklyUsedPercent != nextWeeklyUsed else { return }
+        let fiveHourFromPath = fiveHourFillLayer.presentation()?.path ?? fiveHourFillLayer.path
         let weeklyFromPath = weeklyFillLayer.presentation()?.path ?? weeklyFillLayer.path
+        self.fiveHourDisplayPercent = normalizedFiveHourDisplay
+        self.fiveHourUsedPercent = normalizedFiveHourUsed
         self.weeklyDisplayPercent = nextWeeklyDisplay
         self.weeklyUsedPercent = nextWeeklyUsed
         updateFillLayers(
             animated: displayChanged && hasLaidOutFillLayers && window != nil && !isHidden,
+            fiveHourFromPath: fiveHourFromPath,
             weeklyFromPath: weeklyFromPath
         )
         needsDisplay = true
@@ -525,23 +600,58 @@ private final class StatusQuotaBarsView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        drawRow(displayPercent: weeklyDisplayPercent, centerY: bounds.midY)
+        if let fiveHourDisplayPercent, showsFiveHourQuota {
+            let rowOffset = Self.dualMetrics.rowCenterGap / 2
+            drawRow(
+                label: "5h",
+                displayPercent: fiveHourDisplayPercent,
+                centerY: bounds.midY + rowOffset,
+                metrics: Self.dualMetrics
+            )
+            drawRow(
+                label: "7d",
+                displayPercent: weeklyDisplayPercent,
+                centerY: bounds.midY - rowOffset,
+                metrics: Self.dualMetrics
+            )
+        } else {
+            drawRow(
+                label: "7d",
+                displayPercent: weeklyDisplayPercent,
+                centerY: bounds.midY,
+                metrics: Self.singleMetrics
+            )
+        }
     }
 
-    private func drawRow(displayPercent: Double, centerY: CGFloat) {
+    private func drawRow(
+        label: String,
+        displayPercent: Double,
+        centerY: CGFloat,
+        metrics: Metrics
+    ) {
         let labelAttributes: [NSAttributedString.Key: Any] = [
-            .font: Self.labelFont,
-            .foregroundColor: NSColor.white.withAlphaComponent(0.9)
+            .font: metrics.labelFont,
+            .foregroundColor: NSColor.white.withAlphaComponent(metrics.labelAlpha)
         ]
         let value = Self.valueText(for: displayPercent)
         let valueAttributes: [NSAttributedString.Key: Any] = [
-            .font: Self.valueFont,
-            .foregroundColor: NSColor.white.withAlphaComponent(0.98)
+            .font: metrics.valueFont,
+            .foregroundColor: NSColor.white.withAlphaComponent(metrics.valueAlpha)
         ]
-        let rowLayout = layoutRow(label: Self.label, value: value, centerY: centerY)
+        let rowLayout = layoutRow(
+            label: label,
+            value: value,
+            centerY: centerY,
+            metrics: metrics
+        )
 
-        (Self.label as NSString).draw(in: rowLayout.labelRect, withAttributes: labelAttributes)
-        drawPill(rowLayout.trackRect, color: NSColor.white.withAlphaComponent(0.18))
+        (label as NSString).draw(in: rowLayout.labelRect, withAttributes: labelAttributes)
+        drawPill(
+            rowLayout.trackRect,
+            radius: metrics.trackHeight / 2,
+            color: NSColor.white.withAlphaComponent(0.18)
+        )
         (value as NSString).draw(in: rowLayout.valueRect, withAttributes: valueAttributes)
     }
 
@@ -549,32 +659,53 @@ private final class StatusQuotaBarsView: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
 
-        weeklyFillLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
-        weeklyFillLayer.masksToBounds = false
-        weeklyFillLayer.opacity = 0
-        weeklyFillLayer.zPosition = 1
-        layer?.addSublayer(weeklyFillLayer)
+        [fiveHourFillLayer, weeklyFillLayer].forEach { fillLayer in
+            fillLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+            fillLayer.masksToBounds = false
+            fillLayer.opacity = 0
+            fillLayer.zPosition = 1
+            layer?.addSublayer(fillLayer)
+        }
     }
 
-    private func drawPill(_ rect: NSRect, color: NSColor) {
+    private func drawPill(_ rect: NSRect, radius: CGFloat, color: NSColor) {
         color.setFill()
         NSBezierPath(
             roundedRect: rect,
-            xRadius: Self.trackCornerRadius,
-            yRadius: Self.trackCornerRadius
+            xRadius: radius,
+            yRadius: radius
         ).fill()
     }
 
     private func updateFillLayers(
         animated: Bool,
+        fiveHourFromPath: CGPath? = nil,
         weeklyFromPath: CGPath? = nil
     ) {
         guard bounds.width > 0 else { return }
+        let metrics = showsFiveHourQuota ? Self.dualMetrics : Self.singleMetrics
+        let rowOffset = metrics.rowCenterGap / 2
+        if let fiveHourDisplayPercent, let fiveHourUsedPercent, showsFiveHourQuota {
+            updateFillLayer(
+                fiveHourFillLayer,
+                label: "5h",
+                displayPercent: fiveHourDisplayPercent,
+                usedPercent: fiveHourUsedPercent,
+                centerY: bounds.midY + rowOffset,
+                metrics: metrics,
+                animated: animated,
+                fromPath: fiveHourFromPath
+            )
+        } else {
+            hideFillLayer(fiveHourFillLayer)
+        }
         updateFillLayer(
             weeklyFillLayer,
+            label: "7d",
             displayPercent: weeklyDisplayPercent,
             usedPercent: weeklyUsedPercent,
-            centerY: bounds.midY,
+            centerY: bounds.midY - rowOffset,
+            metrics: metrics,
             animated: animated,
             fromPath: weeklyFromPath
         )
@@ -582,13 +713,20 @@ private final class StatusQuotaBarsView: NSView {
 
     private func updateFillLayer(
         _ fillLayer: CAShapeLayer,
+        label: String,
         displayPercent: Double,
         usedPercent: Double,
         centerY: CGFloat,
+        metrics: Metrics,
         animated: Bool,
         fromPath: CGPath?
     ) {
-        let newPath = fillPath(displayPercent: displayPercent, centerY: centerY)
+        let newPath = fillPath(
+            label: label,
+            displayPercent: displayPercent,
+            centerY: centerY,
+            metrics: metrics
+        )
         let newOpacity: Float = displayPercent > 0 ? 1 : 0
         let oldPath = fromPath ?? fillLayer.presentation()?.path ?? fillLayer.path ?? newPath
         let oldOpacity = fillLayer.presentation()?.opacity ?? fillLayer.opacity
@@ -621,13 +759,31 @@ private final class StatusQuotaBarsView: NSView {
         fillLayer.add(group, forKey: Self.fillAnimationKey)
     }
 
-    private func fillPath(displayPercent: Double, centerY: CGFloat) -> CGPath {
-        let trackRect = self.trackRect(displayPercent: displayPercent, centerY: centerY)
+    private func hideFillLayer(_ fillLayer: CAShapeLayer) {
+        fillLayer.removeAnimation(forKey: Self.fillAnimationKey)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fillLayer.opacity = 0
+        CATransaction.commit()
+    }
+
+    private func fillPath(
+        label: String,
+        displayPercent: Double,
+        centerY: CGFloat,
+        metrics: Metrics
+    ) -> CGPath {
+        let trackRect = layoutRow(
+            label: label,
+            value: Self.valueText(for: displayPercent),
+            centerY: centerY,
+            metrics: metrics
+        ).trackRect
         let fillWidth: CGFloat
         if displayPercent > 0 {
-            fillWidth = max(Self.trackHeight, trackRect.width * CGFloat(displayPercent) / 100)
+            fillWidth = max(metrics.trackHeight, trackRect.width * CGFloat(displayPercent) / 100)
         } else {
-            fillWidth = Self.trackHeight
+            fillWidth = metrics.trackHeight
         }
         let fillRect = NSRect(
             x: trackRect.minX,
@@ -637,16 +793,22 @@ private final class StatusQuotaBarsView: NSView {
         )
         return CGPath(
             roundedRect: fillRect,
-            cornerWidth: Self.trackCornerRadius,
-            cornerHeight: Self.trackCornerRadius,
+            cornerWidth: metrics.trackHeight / 2,
+            cornerHeight: metrics.trackHeight / 2,
             transform: nil
         )
     }
 
-    private func layoutRow(label: String, value: String, centerY: CGFloat) -> RowLayout {
-        let labelSize = Self.textSize(label, font: Self.labelFont)
-        let valueSize = Self.textSize(value, font: Self.valueFont)
-        let contentWidth = labelSize.width + Self.itemGap + Self.trackWidth + Self.itemGap + valueSize.width
+    private func layoutRow(
+        label: String,
+        value: String,
+        centerY: CGFloat,
+        metrics: Metrics
+    ) -> RowLayout {
+        let labelSize = Self.textSize(label, font: metrics.labelFont)
+        let valueSize = Self.textSize(value, font: metrics.valueFont)
+        let contentWidth = labelSize.width + metrics.itemGap + metrics.trackWidth +
+            metrics.itemGap + valueSize.width
         let leadingInset = max((bounds.width - contentWidth) / 2, 0)
         let labelRect = NSRect(
             x: leadingInset,
@@ -655,13 +817,13 @@ private final class StatusQuotaBarsView: NSView {
             height: labelSize.height
         )
         let trackRect = NSRect(
-            x: labelRect.maxX + Self.itemGap,
-            y: centerY - Self.trackHeight / 2,
-            width: Self.trackWidth,
-            height: Self.trackHeight
+            x: labelRect.maxX + metrics.itemGap,
+            y: centerY - metrics.trackHeight / 2,
+            width: metrics.trackWidth,
+            height: metrics.trackHeight
         )
         let valueRect = NSRect(
-            x: trackRect.maxX + Self.itemGap,
+            x: trackRect.maxX + metrics.itemGap,
             y: centerY - valueSize.height / 2 + Self.valueTextYOffset,
             width: valueSize.width,
             height: valueSize.height
@@ -669,12 +831,14 @@ private final class StatusQuotaBarsView: NSView {
         return RowLayout(labelRect: labelRect, trackRect: trackRect, valueRect: valueRect)
     }
 
-    private func trackRect(displayPercent: Double, centerY: CGFloat) -> NSRect {
-        layoutRow(
-            label: Self.label,
-            value: Self.valueText(for: displayPercent),
-            centerY: centerY
-        ).trackRect
+    private var showsFiveHourQuota: Bool {
+        fiveHourDisplayPercent != nil && fiveHourUsedPercent != nil
+    }
+
+    private static func rowWidth(label: String, metrics: Metrics) -> CGFloat {
+        ceil(textSize(label, font: metrics.labelFont).width) + metrics.itemGap +
+            metrics.trackWidth + metrics.itemGap +
+            ceil(textSize("100%", font: metrics.valueFont).width)
     }
 
     private static func textSize(_ text: String, font: NSFont) -> NSSize {
@@ -689,7 +853,7 @@ private final class StatusQuotaBarsView: NSView {
         CodexStatusPalette.nsColor(forUsedPercent: usedPercent)
     }
 
-    private static func clamped(_ percent: Double) -> Double {
+    nonisolated private static func clamped(_ percent: Double) -> Double {
         min(max(percent, 0), 100)
     }
 }

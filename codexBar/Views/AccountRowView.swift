@@ -16,6 +16,13 @@ struct AccountRowView: View {
 
     var body: some View {
         let _ = language.identity
+        let fiveHourUsedPercent = account.hasFiveHourQuota
+            ? account.fiveHourUsedPercent
+            : nil
+        let fiveHourDisplayPercent = fiveHourUsedPercent.map {
+            quotaDisplay.amountMode.displayPercent(forUsedPercent: $0)
+        }
+        let fiveHourResetDescription = account.fiveHourResetDescription
         let weeklyDisplayPercent = quotaDisplay.amountMode.displayPercent(
             forUsedPercent: account.weeklyUsedPercent
         )
@@ -130,13 +137,32 @@ struct AccountRowView: View {
                     Spacer()
                 }
             } else {
-                quotaColumn(
-                    label: "7d",
-                    displayPercent: weeklyDisplayPercent,
-                    usedPercent: account.weeklyUsedPercent,
-                    resetDescription: weeklyResetDescription,
-                    showReset: showWeeklyReset
-                )
+                if let fiveHourUsedPercent, let fiveHourDisplayPercent {
+                    HStack(alignment: .top, spacing: PopupSpacing.regular) {
+                        quotaColumn(
+                            label: "5h",
+                            displayPercent: fiveHourDisplayPercent,
+                            usedPercent: fiveHourUsedPercent,
+                            resetDescription: fiveHourResetDescription,
+                            showReset: !fiveHourResetDescription.isEmpty
+                        )
+                        quotaColumn(
+                            label: "7d",
+                            displayPercent: weeklyDisplayPercent,
+                            usedPercent: account.weeklyUsedPercent,
+                            resetDescription: weeklyResetDescription,
+                            showReset: showWeeklyReset
+                        )
+                    }
+                } else {
+                    quotaColumn(
+                        label: "7d",
+                        displayPercent: weeklyDisplayPercent,
+                        usedPercent: account.weeklyUsedPercent,
+                        resetDescription: weeklyResetDescription,
+                        showReset: showWeeklyReset
+                    )
+                }
             }
         }
         .padding(.vertical, PopupSpacing.regular)
