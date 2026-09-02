@@ -326,7 +326,7 @@ private final class StatusBarCapsuleView: NSView {
     private static let iconSize: CGFloat = 16
     private static let textGap: CGFloat = 3
     private static let barsGap: CGFloat = 0
-    private static let lightGap: CGFloat = 2
+    private static let lightGap: CGFloat = 6
     private static let textRenderPadding: CGFloat = 4
     private static let dotSize: CGFloat = 8.4
     private static let dotGap: CGFloat = 5.0
@@ -410,7 +410,7 @@ private final class StatusBarCapsuleView: NSView {
             barsView.frame = NSRect(
                 x: contentX,
                 y: 0,
-                width: StatusQuotaBarsView.preferredWidth,
+                width: contentWidth,
                 height: bounds.height
             )
         } else {
@@ -466,7 +466,7 @@ private final class StatusBarCapsuleView: NSView {
 
     private static func contentWidth(for quotaState: StatusBarQuotaState) -> CGFloat {
         if quotaState.hasBars {
-            return StatusQuotaBarsView.preferredWidth
+            return StatusQuotaBarsView.contentWidth(for: quotaState)
         }
         return measuredTextWidth(for: quotaState.text)
     }
@@ -519,11 +519,6 @@ private final class StatusQuotaBarsView: NSView {
     private static let valueTextYOffset: CGFloat = -0.2
     private static let fillAnimationKey = "codexbar.quotaFill"
     private static let fillAnimationDuration: CFTimeInterval = 0.38
-
-    static let preferredWidth = max(
-        rowWidth(label: "7d", metrics: singleMetrics),
-        rowWidth(labels: ["5h", "7d"], metrics: dualMetrics)
-    )
 
     private struct RowLayout {
         let labelRect: NSRect
@@ -831,7 +826,7 @@ private final class StatusQuotaBarsView: NSView {
             height: metrics.trackHeight
         )
         let valueRect = NSRect(
-            x: trackRect.maxX + metrics.itemGap + valueColumnWidth - valueSize.width,
+            x: trackRect.maxX + metrics.itemGap,
             y: centerY - valueSize.height / 2 + Self.valueTextYOffset,
             width: valueSize.width,
             height: valueSize.height
@@ -843,14 +838,19 @@ private final class StatusQuotaBarsView: NSView {
         fiveHourDisplayPercent != nil && fiveHourUsedPercent != nil
     }
 
-    private static func rowWidth(label: String, metrics: Metrics) -> CGFloat {
-        rowWidth(labels: [label], metrics: metrics)
-    }
+    static func contentWidth(for quotaState: StatusBarQuotaState) -> CGFloat {
+        let metrics = quotaState.showsFiveHourQuota ? dualMetrics : singleMetrics
+        let labels = quotaState.showsFiveHourQuota ? ["5h", "7d"] : ["7d"]
+        let values = quotaState.showsFiveHourQuota
+            ? [quotaState.fiveHourDisplayPercent ?? 0, quotaState.weeklyDisplayPercent ?? 0]
+            : [quotaState.weeklyDisplayPercent ?? 0]
+        let valueTexts = values.map { valueText(for: $0) }
 
-    private static func rowWidth(labels: [String], metrics: Metrics) -> CGFloat {
-        columnWidth(labels: labels, font: metrics.labelFont) + metrics.itemGap +
+        // Size the outer capsule from the values that are actually visible so
+        // the status lights keep a tight, consistent gap after the percentages.
+        return columnWidth(labels: labels, font: metrics.labelFont) + metrics.itemGap +
             metrics.trackWidth + metrics.itemGap +
-            columnWidth(labels: ["100%"], font: metrics.valueFont)
+            columnWidth(labels: valueTexts, font: metrics.valueFont)
     }
 
     private static func columnWidth(labels: [String], font: NSFont) -> CGFloat {
