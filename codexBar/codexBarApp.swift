@@ -325,7 +325,7 @@ private final class StatusBarCapsuleView: NSView {
     private static let rightPadding: CGFloat = 2
     private static let iconSize: CGFloat = 16
     private static let textGap: CGFloat = 3
-    private static let barsGap: CGFloat = 0
+    private static let barsGap: CGFloat = 4
     private static let lightGap: CGFloat = 6
     private static let textRenderPadding: CGFloat = 4
     private static let dotSize: CGFloat = 8.4
