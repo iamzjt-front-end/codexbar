@@ -522,7 +522,7 @@ private final class StatusQuotaBarsView: NSView {
 
     static let preferredWidth = max(
         rowWidth(label: "7d", metrics: singleMetrics),
-        rowWidth(label: "5h", metrics: dualMetrics)
+        rowWidth(labels: ["5h", "7d"], metrics: dualMetrics)
     )
 
     private struct RowLayout {
@@ -807,8 +807,16 @@ private final class StatusQuotaBarsView: NSView {
     ) -> RowLayout {
         let labelSize = Self.textSize(label, font: metrics.labelFont)
         let valueSize = Self.textSize(value, font: metrics.valueFont)
-        let contentWidth = labelSize.width + metrics.itemGap + metrics.trackWidth +
-            metrics.itemGap + valueSize.width
+        // Keep both dual-quota rows on the same columns. Otherwise `100%` makes
+        // the first row wider than `99%`, and centering each row independently
+        // shifts the second row's track to the right.
+        let labelColumnWidth = Self.columnWidth(
+            labels: showsFiveHourQuota ? ["5h", "7d"] : [label],
+            font: metrics.labelFont
+        )
+        let valueColumnWidth = Self.columnWidth(labels: ["100%"], font: metrics.valueFont)
+        let contentWidth = labelColumnWidth + metrics.itemGap + metrics.trackWidth +
+            metrics.itemGap + valueColumnWidth
         let leadingInset = max((bounds.width - contentWidth) / 2, 0)
         let labelRect = NSRect(
             x: leadingInset,
@@ -817,13 +825,13 @@ private final class StatusQuotaBarsView: NSView {
             height: labelSize.height
         )
         let trackRect = NSRect(
-            x: labelRect.maxX + metrics.itemGap,
+            x: leadingInset + labelColumnWidth + metrics.itemGap,
             y: centerY - metrics.trackHeight / 2,
             width: metrics.trackWidth,
             height: metrics.trackHeight
         )
         let valueRect = NSRect(
-            x: trackRect.maxX + metrics.itemGap,
+            x: trackRect.maxX + metrics.itemGap + valueColumnWidth - valueSize.width,
             y: centerY - valueSize.height / 2 + Self.valueTextYOffset,
             width: valueSize.width,
             height: valueSize.height
@@ -836,9 +844,19 @@ private final class StatusQuotaBarsView: NSView {
     }
 
     private static func rowWidth(label: String, metrics: Metrics) -> CGFloat {
-        ceil(textSize(label, font: metrics.labelFont).width) + metrics.itemGap +
+        rowWidth(labels: [label], metrics: metrics)
+    }
+
+    private static func rowWidth(labels: [String], metrics: Metrics) -> CGFloat {
+        columnWidth(labels: labels, font: metrics.labelFont) + metrics.itemGap +
             metrics.trackWidth + metrics.itemGap +
-            ceil(textSize("100%", font: metrics.valueFont).width)
+            columnWidth(labels: ["100%"], font: metrics.valueFont)
+    }
+
+    private static func columnWidth(labels: [String], font: NSFont) -> CGFloat {
+        labels.reduce(0) { width, label in
+            max(width, ceil(textSize(label, font: font).width))
+        }
     }
 
     private static func textSize(_ text: String, font: NSFont) -> NSSize {
